@@ -1,38 +1,44 @@
 import streamlit as st
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
-# API Key from Streamlit secrets
+# Load API Key from Streamlit Secrets
 API_KEY = st.secrets["YOUTUBE_API_KEY"]
 
+# YouTube API URLs
 YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 YOUTUBE_VIDEO_URL = "https://www.googleapis.com/youtube/v3/videos"
 YOUTUBE_CHANNEL_URL = "https://www.googleapis.com/youtube/v3/channels"
 
+# App Title
 st.title("YouTube Viral Topics Tool")
 
+# Days Input
 days = st.number_input("Enter Days to Search (1-30):", min_value=1, max_value=30, value=5)
 
+# Keyword Input (comma + newline both supported)
 keyword_input = st.text_area(
-    "Enter keywords (line by line or separated by commas):",
-    placeholder="Example:\nrelationship stories, aita update, reddit cheating, open marriage"
+    "Enter up to 50 keywords (one per line or comma-separated):",
+    placeholder="Example:\nrelationship stories\naida update, reddit cheating\nopen marriage"
 )
 
-keywords = []
-for part in keyword_input.split("\n"):
-    for kw in part.split(","):
-        if kw.strip():
-            keywords.append(kw.strip())
+# Convert raw input → supports comma + newline
+raw_keywords = keyword_input.replace(",", "\n")
+keywords = [k.strip() for k in raw_keywords.split("\n") if k.strip()]
 
+# Fetch Data Button
 if st.button("Fetch Data"):
     if not keywords:
         st.error("Please enter at least one keyword.")
         st.stop()
 
     try:
-        start_date = (datetime.utcnow() - timedelta(days=int(days))).isoformat("T") + "Z"
+        # Date range fix
+        start_date = (datetime.now(timezone.utc) - timedelta(days=int(days))).isoformat()
+
         all_results = []
 
+        # Loop keywords
         for keyword in keywords:
             st.write(f"Searching for keyword: {keyword}")
 
@@ -60,12 +66,14 @@ if st.button("Fetch Data"):
             if not video_ids or not channel_ids:
                 continue
 
+            # Video Stats
             stats_response = requests.get(
                 YOUTUBE_VIDEO_URL,
                 params={"part": "statistics", "id": ",".join(video_ids), "key": API_KEY}
             )
             stats_data = stats_response.json()
 
+            # Channel Stats
             channel_response = requests.get(
                 YOUTUBE_CHANNEL_URL,
                 params={"part": "statistics", "id": ",".join(channel_ids), "key": API_KEY}
@@ -78,6 +86,7 @@ if st.button("Fetch Data"):
             stats = stats_data["items"]
             channels = channel_data["items"]
 
+            # Collect Data
             for video, stat, channel in zip(videos, stats, channels):
                 title = video["snippet"].get("title", "N/A")
                 description = video["snippet"].get("description", "")[:200]
@@ -85,6 +94,7 @@ if st.button("Fetch Data"):
                 views = int(stat["statistics"].get("viewCount", 0))
                 subs = int(channel["statistics"].get("subscriberCount", 0))
 
+                # Filter: Channels under 3000 subs
                 if subs < 3000:
                     all_results.append({
                         "Title": title,
@@ -94,6 +104,7 @@ if st.button("Fetch Data"):
                         "Subscribers": subs
                     })
 
+        # Show Results
         if all_results:
             st.success(f"Found {len(all_results)} results across all keywords!")
             for result in all_results:
