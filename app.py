@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 from datetime import datetime, timedelta, timezone
+import pandas as pd
 
 # Load API Key from Streamlit Secrets
 API_KEY = st.secrets["YOUTUBE_API_KEY"]
@@ -16,29 +17,25 @@ st.title("YouTube Viral Topics Tool")
 # Days Input
 days = st.number_input("Enter Days to Search (1-30):", min_value=1, max_value=30, value=5)
 
-# Keyword Input (comma + newline both supported)
+# Keyword Input
 keyword_input = st.text_area(
     "Enter up to 50 keywords (one per line or comma-separated):",
     placeholder="Example:\nrelationship stories\naida update, reddit cheating\nopen marriage"
 )
 
-# Convert raw input → supports comma + newline
+# Convert input
 raw_keywords = keyword_input.replace(",", "\n")
 keywords = [k.strip() for k in raw_keywords.split("\n") if k.strip()]
 
-# Fetch Data Button
 if st.button("Fetch Data"):
     if not keywords:
         st.error("Please enter at least one keyword.")
         st.stop()
 
     try:
-        # Date range fix
         start_date = (datetime.now(timezone.utc) - timedelta(days=int(days))).isoformat()
-
         all_results = []
 
-        # Loop keywords
         for keyword in keywords:
             st.write(f"Searching for keyword: {keyword}")
 
@@ -48,7 +45,7 @@ if st.button("Fetch Data"):
                 "type": "video",
                 "order": "viewCount",
                 "publishedAfter": start_date,
-                "maxResults": 20,  # increased from 5
+                "maxResults": 20,
                 "key": API_KEY,
             }
 
@@ -86,18 +83,21 @@ if st.button("Fetch Data"):
             stats = stats_data["items"]
             channels = channel_data["items"]
 
-            # Collect Data
             for video, stat, channel in zip(videos, stats, channels):
-                title = video["snippet"].get("title", "N/A")
-                description = video["snippet"].get("description", "")[:200]
+                snippet = video["snippet"]
+                title = snippet.get("title", "N/A")
+                description = snippet.get("description", "")[:200]
                 video_url = f"https://www.youtube.com/watch?v={video['id']['videoId']}"
+                thumbnail_url = snippet["thumbnails"]["default"]["url"]
+                published_at = snippet["publishedAt"]
+                
                 views = int(stat["statistics"].get("viewCount", 0))
                 likes = int(stat["statistics"].get("likeCount", 0))
                 comments = int(stat["statistics"].get("commentCount", 0))
                 subs = int(channel["statistics"].get("subscriberCount", 0))
 
-                # Calculate views per day
-                published_date = datetime.fromisoformat(video["snippet"]["publishedAt"].replace("Z", "+00:00"))
+                # Calculate views/day
+                published_date = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
                 days_since_published = max((datetime.now(timezone.utc) - published_date).days, 1)
                 views_per_day = round(views / days_since_published, 2)
 
@@ -107,6 +107,8 @@ if st.button("Fetch Data"):
                         "Title": title,
                         "Description": description,
                         "URL": video_url,
+                        "Thumbnail": thumbnail_url,
+                        "Published Date": published_at,
                         "Views": views,
                         "Likes": likes,
                         "Comments": comments,
@@ -114,23 +116,34 @@ if st.button("Fetch Data"):
                         "Views/Day": views_per_day
                     })
 
-        # Show Results
         if all_results:
             st.success(f"Found {len(all_results)} results across all keywords!")
-            # Sort by views/day descending
             all_results = sorted(all_results, key=lambda x: x["Views/Day"], reverse=True)
+
             for result in all_results:
                 st.markdown(
                     f"**Title:** {result['Title']}  \n"
                     f"**Description:** {result['Description']}  \n"
                     f"**URL:** [Watch Video]({result['URL']})  \n"
+                    f"**Published Date:** {result['Published Date']}  \n"
                     f"**Views:** {result['Views']}  \n"
                     f"**Likes:** {result['Likes']}  \n"
                     f"**Comments:** {result['Comments']}  \n"
                     f"**Subscribers:** {result['Subscribers']}  \n"
                     f"**Views/Day:** {result['Views/Day']}"
                 )
+                st.image(result["Thumbnail"], width=160)
                 st.write("---")
+
+            # Export button
+            df = pd.DataFrame(all_results)
+            st.download_button(
+                label="Export Results as XLSX",
+                data=df.to_excel(index=False, engine="openpyxl"),
+                file_name="youtube_results.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
         else:
             st.warning("No results found for channels with fewer than 3,000 subscribers.")
 
