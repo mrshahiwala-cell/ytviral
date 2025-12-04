@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 from datetime import datetime, timedelta, timezone
+import isodate  # To convert ISO 8601 duration to readable format
 
 # Load API Key
 API_KEY = st.secrets["YOUTUBE_API_KEY"]
@@ -10,16 +11,15 @@ YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 YOUTUBE_VIDEO_URL = "https://www.googleapis.com/youtube/v3/videos"
 YOUTUBE_CHANNEL_URL = "https://www.googleapis.com/youtube/v3/channels"
 
-st.title("YouTube Channel & Trending Video Insights with Country Filter")
+st.title("YouTube Video Insights with Shorts/Long Filter")
 
 # Days input
 days = st.number_input("Enter Days to Search (1-30):", min_value=1, max_value=30, value=5)
 
-# Country selection
-country = st.selectbox(
-    "Select Country",
-    options=["US", "GB", "IN", "CA", "AU", "PK", "BD", "SG", "MY", "AE"],  # Add more as needed
-    index=0
+# Video type filter
+video_type = st.selectbox(
+    "Select Video Type",
+    options=["All", "Shorts (<1 min)", "Long (>1 min)"]
 )
 
 # Keyword input
@@ -30,7 +30,7 @@ keyword_input = st.text_area(
 raw_keywords = keyword_input.replace(",", "\n")
 keywords = [k.strip() for k in raw_keywords.split("\n") if k.strip()]
 
-if st.button("Fetch Channel Videos"):
+if st.button("Fetch Videos"):
     if not keywords:
         st.error("Please enter at least one keyword.")
         st.stop()
@@ -40,9 +40,9 @@ if st.button("Fetch Channel Videos"):
         all_results = []
 
         for keyword in keywords:
-            st.write(f"Searching for keyword: {keyword} in {country}")
+            st.write(f"Searching for keyword: {keyword}")
 
-            # Search for videos with country filter
+            # Search for videos
             search_params = {
                 "part": "snippet",
                 "q": keyword,
@@ -50,7 +50,6 @@ if st.button("Fetch Channel Videos"):
                 "order": "viewCount",
                 "publishedAfter": start_date,
                 "maxResults": 20,
-                "regionCode": country,  # Country filter
                 "key": API_KEY,
             }
 
@@ -68,10 +67,10 @@ if st.button("Fetch Channel Videos"):
             if not video_ids or not channel_ids:
                 continue
 
-            # Video stats
+            # Video stats (includes duration)
             stats_response = requests.get(
                 YOUTUBE_VIDEO_URL,
-                params={"part": "statistics", "id": ",".join(video_ids), "key": API_KEY}
+                params={"part": "statistics,contentDetails", "id": ",".join(video_ids), "key": API_KEY}
             )
             stats_data = stats_response.json()
 
@@ -94,7 +93,7 @@ if st.button("Fetch Channel Videos"):
                 published_at = snippet["publishedAt"]
 
                 views = int(stat["statistics"].get("viewCount", 0))
-                if views < 1000:  # filter by minimum 1000 views
+                if views < 1000:
                     continue
 
                 likes = int(stat["statistics"].get("likeCount", 0))
@@ -102,6 +101,18 @@ if st.button("Fetch Channel Videos"):
                 subs = int(channel["statistics"].get("subscriberCount", 0))
                 channel_created = channel["snippet"]["publishedAt"]
 
+                # Video duration
+                duration_iso = stat["contentDetails"]["duration"]
+                duration_sec = isodate.parse_duration(duration_iso).total_seconds()
+                duration_readable = str(timedelta(seconds=int(duration_sec)))
+
+                # Shorts / Long filter
+                if video_type == "Shorts (<1 min)" and duration_sec > 60:
+                    continue
+                if video_type == "Long (>1 min)" and duration_sec <= 60:
+                    continue
+
+                # Trending keywords from recent videos
                 trending_keywords = ", ".join([v["snippet"]["title"] for v in videos[:5]])
 
                 all_results.append({
@@ -115,6 +126,7 @@ if st.button("Fetch Channel Videos"):
                     "Comments": comments,
                     "Subscribers": subs,
                     "Channel Created": channel_created,
+                    "Duration": duration_readable,
                     "Trending Keywords": trending_keywords
                 })
 
@@ -133,12 +145,13 @@ if st.button("Fetch Channel Videos"):
                     f"**Comments:** {result['Comments']}  \n"
                     f"**Subscribers:** {result['Subscribers']}  \n"
                     f"**Channel Created:** {result['Channel Created']}  \n"
+                    f"**Duration:** {result['Duration']}  \n"
                     f"**Trending Keywords:** {result['Trending Keywords']}"
                 )
                 st.image(result["Thumbnail"], width=160)
                 st.write("---")
         else:
-            st.warning(f"No videos found in {country} with at least 1,000 views.")
+            st.warning("No videos found matching your filters with at least 1,000 views.")
 
     except Exception as e:
         st.error(f"An error occurred: {e}")
