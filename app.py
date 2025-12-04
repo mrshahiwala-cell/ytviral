@@ -2,21 +2,49 @@ import streamlit as st
 import requests
 from datetime import datetime, timedelta, timezone
 
-# Load API Key from Streamlit Secrets
-API_KEY = st.secrets["YOUTUBE_API_KEY"]
+# -------------------
+# CONFIGURATION
+# -------------------
+# YouTube API Key from Streamlit Secrets
+YOUTUBE_API_KEY = st.secrets["YOUTUBE_API_KEY"]
+
+# Gemini API Key (paste your key here or load from secrets)
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY")
 
 # YouTube API URLs
 YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 YOUTUBE_VIDEO_URL = "https://www.googleapis.com/youtube/v3/videos"
 YOUTUBE_CHANNEL_URL = "https://www.googleapis.com/youtube/v3/channels"
 
-# App Title
-st.title("YouTube Viral Topics Tool")
+# -------------------
+# FUNCTIONS
+# -------------------
+
+def generate_seo_script(topic):
+    """Generate SEO-optimized long-form content using Gemini API"""
+    url = "https://gemini.googleapis.com/v1/generateText"  # Example endpoint
+    headers = {
+        "Authorization": f"Bearer {GEMINI_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    prompt = f"Write a long SEO-friendly YouTube video script about '{topic}'. Include headings, subheadings, keywords, and an engaging intro and outro."
+    payload = {"prompt": prompt, "max_output_tokens": 1000}
+
+    response = requests.post(url, headers=headers, json=payload)
+    if response.status_code == 200:
+        return response.json().get("output_text", "No content generated.")
+    else:
+        return f"Error generating script: {response.text}"
+
+# -------------------
+# STREAMLIT APP
+# -------------------
+st.title("YouTube Viral Topics + SEO Script Tool")
 
 # Days Input
 days = st.number_input("Enter Days to Search (1-30):", min_value=1, max_value=30, value=5)
 
-# Keyword Input (comma + newline both supported)
+# Keyword Input
 keyword_input = st.text_area(
     "Enter up to 50 keywords (one per line or comma-separated):",
     placeholder="Example:\nrelationship stories\naida update, reddit cheating\nopen marriage"
@@ -33,9 +61,7 @@ if st.button("Fetch Data"):
         st.stop()
 
     try:
-        # Date range fix
         start_date = (datetime.now(timezone.utc) - timedelta(days=int(days))).isoformat()
-
         all_results = []
 
         # Loop keywords
@@ -49,7 +75,7 @@ if st.button("Fetch Data"):
                 "order": "viewCount",
                 "publishedAfter": start_date,
                 "maxResults": 5,
-                "key": API_KEY,
+                "key": YOUTUBE_API_KEY,
             }
 
             response = requests.get(YOUTUBE_SEARCH_URL, params=search_params)
@@ -69,25 +95,22 @@ if st.button("Fetch Data"):
             # Video Stats
             stats_response = requests.get(
                 YOUTUBE_VIDEO_URL,
-                params={"part": "statistics", "id": ",".join(video_ids), "key": API_KEY}
+                params={"part": "statistics", "id": ",".join(video_ids), "key": YOUTUBE_API_KEY}
             )
             stats_data = stats_response.json()
 
             # Channel Stats
             channel_response = requests.get(
                 YOUTUBE_CHANNEL_URL,
-                params={"part": "statistics", "id": ",".join(channel_ids), "key": API_KEY}
+                params={"part": "statistics", "id": ",".join(channel_ids), "key": YOUTUBE_API_KEY}
             )
             channel_data = channel_response.json()
 
             if "items" not in stats_data or "items" not in channel_data:
                 continue
 
-            stats = stats_data["items"]
-            channels = channel_data["items"]
-
-            # Collect Data
-            for video, stat, channel in zip(videos, stats, channels):
+            # Collect Data & Generate Script
+            for video, stat, channel in zip(videos, stats_data["items"], channel_data["items"]):
                 title = video["snippet"].get("title", "N/A")
                 description = video["snippet"].get("description", "")[:200]
                 video_url = f"https://www.youtube.com/watch?v={video['id']['videoId']}"
@@ -96,12 +119,14 @@ if st.button("Fetch Data"):
 
                 # Filter: Channels under 3000 subs
                 if subs < 3000:
+                    seo_script = generate_seo_script(title)
                     all_results.append({
                         "Title": title,
                         "Description": description,
                         "URL": video_url,
                         "Views": views,
-                        "Subscribers": subs
+                        "Subscribers": subs,
+                        "SEO_Script": seo_script
                     })
 
         # Show Results
@@ -115,9 +140,11 @@ if st.button("Fetch Data"):
                     f"**Views:** {result['Views']}  \n"
                     f"**Subscribers:** {result['Subscribers']}"
                 )
+                st.text_area("Generated SEO Script", value=result['SEO_Script'], height=300)
                 st.write("---")
         else:
             st.warning("No results found for channels with fewer than 3,000 subscribers.")
 
     except Exception as e:
         st.error(f"An error occurred: {e}")
+
