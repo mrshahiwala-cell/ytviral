@@ -10,10 +10,17 @@ YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 YOUTUBE_VIDEO_URL = "https://www.googleapis.com/youtube/v3/videos"
 YOUTUBE_CHANNEL_URL = "https://www.googleapis.com/youtube/v3/channels"
 
-st.title("YouTube Channel & Trending Video Insights")
+st.title("YouTube Channel & Trending Video Insights with Country Filter")
 
 # Days input
 days = st.number_input("Enter Days to Search (1-30):", min_value=1, max_value=30, value=5)
+
+# Country selection
+country = st.selectbox(
+    "Select Country",
+    options=["US", "GB", "IN", "CA", "AU", "PK", "BD", "SG", "MY", "AE"],  # Add more as needed
+    index=0
+)
 
 # Keyword input
 keyword_input = st.text_area(
@@ -33,9 +40,9 @@ if st.button("Fetch Channel Videos"):
         all_results = []
 
         for keyword in keywords:
-            st.write(f"Searching for keyword: {keyword}")
+            st.write(f"Searching for keyword: {keyword} in {country}")
 
-            # Search for videos
+            # Search for videos with country filter
             search_params = {
                 "part": "snippet",
                 "q": keyword,
@@ -43,6 +50,7 @@ if st.button("Fetch Channel Videos"):
                 "order": "viewCount",
                 "publishedAfter": start_date,
                 "maxResults": 20,
+                "regionCode": country,  # Country filter
                 "key": API_KEY,
             }
 
@@ -94,7 +102,6 @@ if st.button("Fetch Channel Videos"):
                 subs = int(channel["statistics"].get("subscriberCount", 0))
                 channel_created = channel["snippet"]["publishedAt"]
 
-                # Trending keywords from channel's recent videos (titles)
                 trending_keywords = ", ".join([v["snippet"]["title"] for v in videos[:5]])
 
                 all_results.append({
@@ -113,7 +120,6 @@ if st.button("Fetch Channel Videos"):
 
         if all_results:
             st.success(f"Found {len(all_results)} results!")
-            # Sort by views descending
             all_results = sorted(all_results, key=lambda x: x["Views"], reverse=True)
 
             for result in all_results:
@@ -132,7 +138,7 @@ if st.button("Fetch Channel Videos"):
                 st.image(result["Thumbnail"], width=160)
                 st.write("---")
         else:
-            st.warning("No videos found with at least 1,000 views.")
+            st.warning(f"No videos found in {country} with at least 1,000 views.")
 
     except Exception as e:
         st.error(f"An error occurred: {e}")
