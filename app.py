@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 YOUTUBE_API_KEY = st.secrets["YOUTUBE_API_KEY"]
 
 # Gemini API Key (paste your key here or load from secrets)
-GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY")
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "AIzaSyAuxEnMZXoYmZZtKEqAVJ7GdQ-VVHSgryg")
 
 # YouTube API URLs
 YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
