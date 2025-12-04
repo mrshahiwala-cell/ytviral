@@ -48,7 +48,7 @@ if st.button("Fetch Data"):
                 "type": "video",
                 "order": "viewCount",
                 "publishedAfter": start_date,
-                "maxResults": 5,
+                "maxResults": 20,  # increased from 5
                 "key": API_KEY,
             }
 
@@ -69,7 +69,7 @@ if st.button("Fetch Data"):
             # Video Stats
             stats_response = requests.get(
                 YOUTUBE_VIDEO_URL,
-                params={"part": "statistics", "id": ",".join(video_ids), "key": API_KEY}
+                params={"part": "statistics,contentDetails", "id": ",".join(video_ids), "key": API_KEY}
             )
             stats_data = stats_response.json()
 
@@ -92,7 +92,14 @@ if st.button("Fetch Data"):
                 description = video["snippet"].get("description", "")[:200]
                 video_url = f"https://www.youtube.com/watch?v={video['id']['videoId']}"
                 views = int(stat["statistics"].get("viewCount", 0))
+                likes = int(stat["statistics"].get("likeCount", 0))
+                comments = int(stat["statistics"].get("commentCount", 0))
                 subs = int(channel["statistics"].get("subscriberCount", 0))
+
+                # Calculate views per day
+                published_date = datetime.fromisoformat(video["snippet"]["publishedAt"].replace("Z", "+00:00"))
+                days_since_published = max((datetime.now(timezone.utc) - published_date).days, 1)
+                views_per_day = round(views / days_since_published, 2)
 
                 # Filter: Channels under 3000 subs
                 if subs < 3000:
@@ -101,19 +108,27 @@ if st.button("Fetch Data"):
                         "Description": description,
                         "URL": video_url,
                         "Views": views,
-                        "Subscribers": subs
+                        "Likes": likes,
+                        "Comments": comments,
+                        "Subscribers": subs,
+                        "Views/Day": views_per_day
                     })
 
         # Show Results
         if all_results:
             st.success(f"Found {len(all_results)} results across all keywords!")
+            # Sort by views/day descending
+            all_results = sorted(all_results, key=lambda x: x["Views/Day"], reverse=True)
             for result in all_results:
                 st.markdown(
                     f"**Title:** {result['Title']}  \n"
                     f"**Description:** {result['Description']}  \n"
                     f"**URL:** [Watch Video]({result['URL']})  \n"
                     f"**Views:** {result['Views']}  \n"
-                    f"**Subscribers:** {result['Subscribers']}"
+                    f"**Likes:** {result['Likes']}  \n"
+                    f"**Comments:** {result['Comments']}  \n"
+                    f"**Subscribers:** {result['Subscribers']}  \n"
+                    f"**Views/Day:** {result['Views/Day']}"
                 )
                 st.write("---")
         else:
