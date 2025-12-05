@@ -121,7 +121,8 @@ if st.button("Viral Videos Dhundo Abhi!", type="primary"):
                     "keyword": keyword,
                     "link": f"https://www.youtube.com/watch?v={vid}",
                     "thumbnail": sn["thumbnails"]["high"]["url"],
-                    "type": video_category
+                    "type": video_category,
+                    "duration_seconds": duration_seconds
                 })
         except Exception as e:
             st.error(f"Error: {e}")
@@ -131,6 +132,8 @@ if st.button("Viral Videos Dhundo Abhi!", type="primary"):
     # Filter based on video_type
     if video_type != "All":
         all_results = [r for r in all_results if r["type"] == video_type]
+        if video_type == "Long":
+            all_results = [r for r in all_results if r["duration_seconds"] >= 300]
     
     # Display Results
     if all_results:
