@@ -12,18 +12,17 @@ st.title("YouTube Viral Hunter Pro 2025")
 st.markdown("### Aaj ke sabse tezi se viral ho rahe videos – bilkul free!")
 
 # ======================= API KEYS =======================
-# YouTube key → Streamlit secrets se (recommended & safe)
 YOUTUBE_API_KEY = st.secrets["YOUTUBE_API_KEY"]
 
-# Gemini key → YAHAN DIRECT PASTE KAR DO (sirf aap dekh rahe ho)
-GEMINI_API_KEY = "AIzaSyAuxEnMZXoYmZZtKEqAVJ7GdQ-VVHSgryg"   # ←←←← YAHAN APNI KEY DAAL DO
+# ←←←← YAHAN APNI GEMINI KEY PASTE KAR DO
+GEMINI_API_KEY = "AIzaSyAuxEnMZXoYmZZtKEqAVJ7GdQ-VVHSgryg"
 
-# Agar upar wali line mein key nahi daali to secrets se try karega (optional backup)
-if GEMINI_API_KEY == "paste_your_gemini_api_key_here":
+# Agar code mein nahi daali to secrets se try karega
+if GEMINI_API_KEY == "AIzaSyAuxEnMZXoYmZZtKEqAVJ7GdQ-VVHSgryg":
     try:
         GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
     except:
-        st.error("Gemini API key nahi mili! Code mein daal do ya secrets mein add karo.")
+        st.error("Gemini API key nahi mili! Code mein daal do ya secrets.toml mein add karo.")
         st.stop()
 
 genai.configure(api_key=GEMINI_API_KEY)
@@ -32,23 +31,26 @@ model = genai.GenerativeModel('gemini-1.5-flash')
 # ======================= SIDEBAR =======================
 with st.sidebar:
     st.header("Settings")
-    days = st.slider("Last kitne din se videos dhundo?", 1, 7, 3)
+    days = st.slider("Last kitne din se videos dhundo?", 18, 7, 3)
     country = st.selectbox("Country", ["IN", "PK", "US", "GB", "BD", "AE", "CA", "GLOBAL"], index=0)
     min_views = st.number_input("Minimum Views", 5000, 1000000, 10000)
-    min_vph = st.slider("Views Per Hour (jitna zyada utna viral)", 5000, 200000, 25000)
+    min_vph = st.slider("Views Per Hour (viral ke liye)", 5000, 200000, 25000)
     st.markdown("---")
-    st.success("Gemini AI se full analysis milega analysis!")
+    st.success("Gemini se title + thumbnail analysis!")
 
 # ======================= INPUT =======================
 keyword_input = st.text_area(
     "Keywords daalo (comma ya new line se):",
     height=120,
     placeholder="carryminati roast, mrbeast challenge, dhruv rathee, technical guruji, reddit stories hindi"
-)
+).strip()  # ← Yahan hi strip kar diya
 
-if not keyword_input := keyword_input.strip():
+# Agar kuch nahi daala to stop
+if not keyword_input:
+    st.warning("Bhai keyword toh daal do pehle!")
     st.stop()
 
+# Keywords ko list mein convert
 keywords = [k.strip() for k in keyword_input.replace(",", "\n").split("\n") if k.strip()]
 
 # ======================= MAIN FUNCTION =======================
@@ -57,7 +59,7 @@ def find_viral_videos(keywords, days_back, country_code, min_views, min_vph):
     url_search = "https://www.googleapis.com/youtube/v3/search"
     url_videos = "https://www.googleapis.com/youtube/v3/videos"
     
-    published_after = (datetime.utcnow() - timedelta(days=days_back)).isoformat("YYYY-MM-DDTHH:mm:ssZ")
+    published_after = (datetime.utcnow() - timedelta(days=days_back)).isoformat("T") + "Z"
     region = country_code if country_code != "GLOBAL" else None
     
     viral_list = []
@@ -88,11 +90,13 @@ def find_viral_videos(keywords, days_back, country_code, min_views, min_vph):
 
             for item in data["items"]:
                 vid = item["id"].get("videoId")
-                if not vid: continue
+                if not vid: 
+                    continue
                     
                 pub_dt = datetime.fromisoformat(item["snippet"]["publishedAt"].replace("Z", "+00:00"))
                 hours_old = (datetime.utcnow().replace(tzinfo=None) - pub_dt.replace(tzinfo=None)).total_seconds() / 3600
-                if hours_old < 1: hours_old = 1
+                if hours_old < 1: 
+                    hours_old = 1
 
                 video_ids.append(vid)
                 temp_data[vid] = {
@@ -117,13 +121,15 @@ def find_viral_videos(keywords, days_back, country_code, min_views, min_vph):
                 likes = int(stats.get("likeCount", 0))
                 comments = int(stats.get("commentCount", 0))
 
-                if views < min_views: continue
+                if views < min_views: 
+                    continue
                 vph = int(views / temp_data[vid]["hours"])
-                if vph < min_vph: continue
+                if vph < min_vph: 
+                    continue
 
-                # Viral Score (0-100)
+                # Viral Score
                 velocity_score = min(vph / 100000 * 50, 50)
-                engagement = (likes + comments*3) / views * 100
+                engagement = (likes + comments*3) / views * 100 if views > 0 else 0
                 engage_score = min(engagement * 2, 30)
                 freshness = max(20 - temp_data[vid]["hours"]/6, 0)
                 score = velocity_score + engage_score + freshness
@@ -139,21 +145,21 @@ def find_viral_videos(keywords, days_back, country_code, min_views, min_vph):
                 })
 
         except Exception as e:
-            st.error(f"Error: {e}")
+            st.error(f"API Error: {e}")
             continue
 
     return sorted(viral_list, key=lambda x: x["score"], reverse=True)[:25]
 
 # ======================= RUN =======================
 if st.button("VIRAL VIDEOS DHUNDO", type="primary", use_container_width=True):
-    with st.spinner("500+ videos scan ho rahe hain..."):
+    with st.spinner("500+ videos scan kar raha hoon..."):
         results = find_viral_videos(keywords, days, country, min_views, min_vph)
 
     if not results:
-        st.warning("Koi viral video nahi mila – keywords badlo ya days badhao")
+        st.warning("Koi viral video nahi mila – keywords ya settings change karo")
     else:
         st.balloons()
-        st.success(f"{len(results)} SUPER VIRAL videos mil gaye!")
+        st.success(f"🎉 {len(results)} SUPER VIRAL videos mil gaye!")
 
         for v in results:
             score_color = "red" if v["score"] >= 85 else "orange" if v["score"] >= 70 else "green"
@@ -165,29 +171,29 @@ if st.button("VIRAL VIDEOS DHUNDO", type="primary", use_container_width=True):
                 st.markdown(f"### [{v['title']}]({v['url']})")
                 st.write(f"**{v['channel']}** • {v['views']:,} views • {v['vph']:,}/hour • Engagement {v['engagement']}%")
 
-                if st.button("Gemini se Full Analysis Karo", key=v['url']):
-                    with st.spinner("Gemini soch raha hai..."):
-                        img = Image.open(requests.get(v["thumb"], stream=True).raw)
-                        prompt = f"""
-                        Title: {v['title']}
-                        Views: {v['views']:,} | {vph: {v['vph']:,}
-                        Yeh video kyun viral ho raha hai?
-                        Best hook kya hai?
-                        Thumbnail kitne marks ka (1-10)?
-                        Ek similar idea Hindi/Urdu mein do.
-                        Short aur mazedaar jawab do.
-                        """
+                if st.button("Gemini se Analysis Karo", key=v['url']):
+                    with st.spinner("Gemini AI soch raha hai..."):
                         try:
+                            img = Image.open(requests.get(v["thumb"], stream=True).raw)
+                            prompt = f"""
+                            Title: {v['title']}
+                            Views: {v['views']:,} | Views/hour: {v['vph']:,}
+                            1. Yeh video kyun viral ho raha hai?
+                            2. Best hook kya lagta hai?
+                            3. Thumbnail kitne marks (1-10)?
+                            4. Ek similar idea Hindi/Urdu mein suggest karo.
+                            Short jawab do.
+                            """
                             resp = model.generate_content([prompt, img])
-                            st.markdown("### Gemini AI Analysis")
+                            st.markdown("### Gemini AI Ka Analysis")
                             st.write(resp.text)
-                        except:
-                            st.write("Gemini busy hai, thodi der baad try karo")
+                        except Exception as e:
+                            st.write("Gemini busy hai ya error aaya, thodi der baad try karo")
 
             st.divider()
 
         # Download CSV
         df = pd.DataFrame(results)
-        st.download_button("Download CSV", df.to_csv(index=False), "viral_videos_today.csv", "text/csv")
+        st.download_button("📥 Download All Results (CSV)", df.to_csv(index=False).encode(), "viral_videos_today.csv", "text/csv")
 
-st.caption("Made with love by Desi Creators | 100% Free Forever")
+st.caption("Made with ❤️ by Desi Creators | 100% Free Tool")
