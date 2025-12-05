@@ -3,6 +3,7 @@ import requests
 from datetime import datetime, timedelta
 import pandas as pd
 import io
+import re
 
 st.set_page_config(page_title="Viral Hunter 2025", layout="wide")
 st.title("Real Viral Videos Only (10K+ Views • 1K+ Subs • New Channels)")
@@ -62,16 +63,9 @@ if st.button("Viral Videos Dhundo Abhi!", type="primary"):
                 for v in stats.get("items", []):
                     s = v["statistics"]
                     duration = v["contentDetails"]["duration"]
-                    # Parse duration (PT#H#M#S)
-                    dur_seconds = 0
-                    if 'H' in duration:
-                        dur_seconds += int(duration.split('H')[0].split('T')[-1]) * 3600
-                        duration = duration.split('H')[1]
-                    if 'M' in duration:
-                        dur_seconds += int(duration.split('M')[0]) * 60
-                        duration = duration.split('M')[1]
-                    if 'S' in duration:
-                        dur_seconds += int(duration.split('S')[0])
+                    # Parse duration using regex
+                    time_dict = {"H": 3600, "M": 60, "S": 1}
+                    dur_seconds = sum(int(num) * time_dict[unit] for num, unit in re.findall(r'(\d+)([HMS])', duration))
                     stats_dict[v["id"]] = {
                         "views": int(s.get("viewCount", 0)),
                         "likes": int(s.get("likeCount", 0)),
