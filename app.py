@@ -1,144 +1,221 @@
-# app.py
 import streamlit as st
 import requests
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import pandas as pd
 
-st.set_page_config(page_title="YouTube Viral Finder", layout="wide")
-st.title("YouTube Viral Content Finder 2025")
-
-# API Key
+# === CONFIG ===
 API_KEY = st.secrets["YOUTUBE_API_KEY"]
-
-# URLs
-SEARCH_URL   = "https://www.googleapis.com/youtube/v3/search"
-VIDEOS_URL   = "https://www.googleapis.com/youtube/v3/videos"
+SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
+VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
 CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels"
+
+st.set_page_config(page_title="YouTube Viral Finder Pro", layout="wide")
+st.title("🔥 YouTube Viral Content Finder Pro (10000% Accurate)")
+st.markdown("**Finds actually exploding videos in any country • Real-time viral potential detector**")
 
 # Sidebar
 with st.sidebar:
-    days = st.slider("Search last X days", 1, 7, 3)
-    country = st.selectbox("Country", ["GLOBAL","IN","PK","US","GB","CA","AE","BD","AU"])
-    min_vph = st.slider("Minimum Views/Hour (viral filter)", 5000, 100000, 15000)
+    st.header("⚙️ Settings")
+    days = st.slider("Lookback Period (Days)", 1, 30, 7)
+    min_views = st.number_input("Minimum Views", 500, 1000000, 5000)
+    min_engagement_rate = st.slider("Min Engagement Rate (%)", 1.0, 20.0, 4.0)
+    
+    country_names = {
+        "US": "United States", "GB": "United Kingdom", "IN": "India", "PK": "Pakistan",
+        "BD": "Bangladesh", "CA": "Canada", "AU": "Australia", "AE": "UAE", 
+        "MY": "Malaysia", "SG": "Singapore", "DE": "Germany", "FR": "France",
+        "BR": "Brazil", "MX": "Mexico", "ID": "Indonesia", "EG": "Egypt"
+    }
+    country_code = st.selectbox("Select Country", options=list(country_names.keys()), 
+                               format_func=lambda x: f"{x} - {country_names[x]}")
 
 # Input
-keyword_input = st.text_area("Keywords (one per line or comma)", height=130).strip()
-if not keyword_input:
-    st.stop()
+keyword_input = st.text_area(
+    "Enter Keywords (one per line or comma separated)",
+    height=150,
+    placeholder="e.g.\nreddit stories\ncheating revenge\naita\nopen marriage\nmrbeast challenge"
+)
 
-keywords = [k.strip() for k in keyword_input.replace(",","\n").split("\n") if k.strip()]
+if st.button("🚀 Find Viral Videos Now", type="primary"):
+    if not keyword_input.strip():
+        st.error("Please enter at least one keyword!")
+        st.stop()
 
-@st.cache_data(ttl=1800)
-def get_viral_videos(keywords, days_back, region):
-    published_after = (datetime.now(timezone.utc) - timedelta(days=days_back)).isoformat(timespec='seconds') + "Z"
-    region_code = None if region == "GLOBAL" else region
+    keywords = [k.strip() for k in keyword_input.replace(",", "\n").split("\n") if k.strip()]
+    all_videos = []
+    start_time = datetime.utcnow() - timedelta(days=days)
+    
+    progress_bar = st.progress(0)
+    status_text = st.empty()
 
-    results = []
-
-    for kw in keywords:
-        st.write(f"Searching → **{kw}**")
-
-        params = {
+    for idx, keyword in enumerate(keywords):
+        status_text.text(f"Searching: {keyword} in {country_names[country_code]}...")
+        
+        # === 1. Keyword Search (Recent + Relevant) ===
+        search_params = {
             "part": "snippet",
-            "q": kw,
+            "q": keyword,
             "type": "video",
-            "order": "date",
-            "publishedAfter": published_after,
-            "maxResults": 40,
-            "regionCode": region_code,
+            "order": "viewCount",
+            "publishedAfter": (start_time).isoformat("T") + "Z",
+            "maxResults": 15,
+            "regionCode": country_code,
+            "relevanceLanguage": country_code.lower(),
+            "key": API_KEY
+        }
+        
+        # === 2. Also Get Trending in That Country (Most Important!) ===
+        trending_params = {
+            "part": "snippet",
+            "chart": "mostPopular",
+            "regionCode": country_code,
+            "maxResults": 25,
             "key": API_KEY
         }
 
         try:
-            r = requests.get(SEARCH_URL, params=params, timeout=15)
-            data = r.json()
-
-            if not data.get("items"):
-                continue
+            # Get keyword results
+            search_resp = requests.get(SEARCH_URL, params=search_params).json()
+            trending_resp = requests.get(VIDEOS_URL, params=trending_params).json()
 
             video_ids = []
-            info = {}
+            items_to_process = []
 
-            for item in data["items"]:
-                vid = item["id"].get("videoId")
-                if not vid: continue
+            # From keyword search
+            if "items" in search_resp:
+                for item in search_resp["items"]:
+                    if "videoId" in item["id"]:
+                        video_ids.append(item["id"]["videoId"])
+                        items_to_process.append(item)
 
-                pub = item["snippet"]["publishedAt"]
-                published_dt = datetime.fromisoformat(pub.replace("Z", "+00:00"))
-                hours_old = max(1, (datetime.now(timezone.utc) - published_dt).total_seconds() / 3600)
+            # From trending (filter by keyword match in title/description)
+            if "items" in trending_resp:
+                for item in trending_resp["items"]:
+                    title = item["snippet"]["title"].lower()
+                    desc = item["snippet"]["description"].lower()
+                    if any(k.lower() in title or k.lower() in desc for k in keywords):
+                        vid = item["id"]
+                        if vid not in video_ids:
+                            video_ids.append(vid)
+                            items_to_process.append(item)
 
-                video_ids.append(vid)
-                info[vid] = {
-                    "title": item["snippet"]["title"],
-                    "channel": item["snippet"]["channelTitle"],
-                    "thumb": item["snippet"]["thumbnails"]["high"]["url"],
-                    "url": f"https://www.youtube.com/watch?v={vid}",
-                    "published": pub,
-                    "hours_old": hours_old
-                }
+            if not video_ids:
+                continue
 
-            # Get stats in one call
-            stats_r = requests.get(VIDEOS_URL, params={
-                "part": "statistics",
+            # === Fetch Stats ===
+            stats_resp = requests.get(VIDEOS_URL, params={
+                "part": "statistics,contentDetails",
                 "id": ",".join(video_ids),
                 "key": API_KEY
-            }, timeout=15).json()
+            }).json()
 
-            for item in stats_r.get("items", []):
-                vid = item["id"]
-                s = item["statistics"]
-                views = int(s.get("viewCount", 0))
-                likes = int(s.get("likeCount", 0))
-                comments = int(s.get("commentCount", 0))
+            channel_ids = list(set([item["snippet"]["channelId"] for item in items_to_process if "channelId" in item["snippet"]]))
+            channel_resp = requests.get(CHANNELS_URL, params={
+                "part": "statistics,snippet",
+                "id": ",".join(channel_ids),
+                "key": API_KEY
+            }).json()
 
-                hours = info[vid]["hours_old"]
-                vph = int(int)(views / hours)
+            channel_dict = {c["id"]: c for c in channel_resp.get("items", [])}
+            stats_dict = {s["id"]: s for s in stats_resp.get("items", [])}
 
-                if vph < min_vph:
+            for item in items_to_process:
+                vid = item["id"]["videoId"] if isinstance(item["id"], dict) else item["id"]
+                snippet = item["snippet"]
+                stats = stats_dict.get(vid, {})
+                channel = channel_dict.get(snippet["channelId"], {})
+
+                views = int(stats.get("statistics", {}).get("viewCount", 0))
+                if views < min_views:
                     continue
 
-                engagement = (likes + comments*3) / views * 100 if views > 0 else 0
-                score = min(vph/80000*55,55) + min(engagement*2,30,30) + max(15-hours/10,0)
+                likes = int(stats.get("statistics", {}).get("likeCount", 0))
+                comments = int(stats.get("statistics", {}).get("commentCount", 0))
+                duration = stats.get("contentDetails", {}).get("duration", "")
+                
+                published_at = datetime.fromisoformat(snippet["publishedAt"].replace("Z", "+00:00"))
+                hours_old = (datetime.utcnow().replace(tzinfo=None) - published_at.replace(tzinfo=None)).total_seconds() / 3600
+                if hours_old == 0:
+                    hours_old = 1
 
-                results.append({
-                    "Title": info[vid]["title"],
-                    "Channel": info[vid]["channel"],
-                    "Views": views,
-                    "VPH": vph,
-                    "Engagement %": round(engagement,2),
-                    "Age hrs": round(hours,1),
-                    "Score": round(score,1),
-                    "URL": info[vid]["url"],
-                    "Thumb": info[vid]["thumb"]
+                # === VIRAL SCORE CALCULATION ===
+                views_per_hour = views / hours_old
+                engagement_rate = ((likes + comments) / views * 100) if views > 0 else 0
+                viral_score = (views_per_hour * 0.6) + (engagement_rate * 20) + (views / 1000)
+
+                if engagement_rate < min_engagement_rate:
+                    continue
+
+                all_videos.append({
+                    "Title": snippet["title"],
+                    "Channel": snippet["channelTitle"],
+                    "URL": f"https://www.youtube.com/watch?v={vid}",
+                    "Thumbnail": snippet["thumbnails"]["high"]["url"],
+                    "Published": published_at.strftime("%b %d, %Y"),
+                    "Age (Hours)": round(hours_old, 1),
+                    "Views": f"{views:,}",
+                    "Views/Hour": f"{int(views_per_hour):,}",
+                    "Likes": f"{likes:,}",
+                    "Comments": f"{comments:,}",
+                    "Engagement %": f"{engagement_rate:.2f}%",
+                    "Viral Score": round(viral_score, 2),
+                    "Subscribers": f"{int(channel.get('statistics', {}).get('subscriberCount', 0)):,}",
+                    "Duration": duration.replace("PT", "").replace("M", "m ").replace("S", "s") if duration else "N/A"
                 })
 
         except Exception as e:
-            st.error(f"Error: {e}")
-            continue
+            st.error(f"Error with keyword '{keyword}': {str(e)}")
 
-    return sorted(results, key=lambda x: x["Score"], reverse=True)[:25]
+        progress_bar.progress((idx + 1) / len(keywords))
 
-# Run
-if st.button("FIND VIRAL VIDEOS NOW", type="primary", use_container_width=True):
-    with st.spinner("Scanning latest videos…"):
-        viral_list = get_viral_videos(keywords, days, country)
+    # === DISPLAY RESULTS ===
+    if all_videos:
+        df = pd.DataFrame(all_videos)
+        df = df.drop_duplicates(subset=["URL"])
+        df = df.sort_values("Viral Score", ascending=False).reset_index(drop=True)
 
-    if not viral_list:
-        st.info("No fast-growing videos found — try different keywords")
+        st.success(f"🚀 Found {len(df)} VIRAL POTENTIAL Videos in {country_names[country_code]}!")
+
+        # Top badges
+        top1 = df.iloc[0]
+        st.markdown(f"### 🏆 **MOST VIRAL RIGHT NOW** → [{top1['Title']}]({top1['URL']})")
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Views/Hour", top1["Views/Hour"])
+        with col2:
+            st.metric("Engagement", top1["Engagement %"])
+        with col3:
+            st.metric("Viral Score", top1["Viral Score"])
+        with col4:
+            st.image(top1["Thumbnail"], width=200)
+
+        st.markdown("---")
+        st.markdown("### 📊 All High-Potential Videos (Sorted by Viral Score)")
+
+        for _, row in df.iterrows():
+            score_color = "🟢" if row["Viral Score"] > 5000 else "🟡" if row["Viral Score"] > 2000 else "🔴"
+            exp_col = st.expander(f"{score_color} {row['Title'][:80]}...")
+            
+            with exp_col:
+                c1, c2 = st.columns([3, 2])
+                with c1:
+                    st.markdown(f"**Channel:** {row['Channel']} | 👤 Subs: {row['Subscribers']}")
+                    st.markdown(f"**Link:** [Watch Now]({row['URL']})")
+                    st.markdown(f"**Published:** {row['Published']} ({row['Age (Hours)']} hrs ago)")
+                with c2:
+                    st.image(row["Thumbnail"], use_column_width=True)
+
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("Views", row["Views"])
+                m2.metric("Views/Hour", row["Views/Hour"])
+                m3.metric("Engagement", row["Engagement %"])
+                m4.metric("🔥 Viral Score", row["Viral Score"])
+
+                if row["Viral Score"] > 8000:
+                    st.markdown("**🚨 EXTREME VIRAL POTENTIAL - MAKE THIS NOW! 🚨**")
+
     else:
-        st.success(f"Found {len(viral_list)} exploding videos")
-        for v in viral_list:
-            score_color = "red" if v["Score"] >= 80 else "orange" if v["Score"] >= 65 else "green"
-            c1, c2 = st.columns([1,5])
-            with c1:
-                st.image(v["Thumb"])
-                st.markdown(f"<h3 style='color:{score_color};text-align:center'>{v['Score']}</h3>", unsafe_allow_html=True)
-            with c2:
-                st.subheader(v["Title"])
-                st.write(f"**{v['Channel']}** • {v['Views']:,} views • **{v['VPH']:,}/hr** • {v['Engagement %']}%")
-                st.markdown(f"[Watch Video]({v['URL']})")
-            st.divider()
+        st.warning("No viral videos found with current filters. Try lowering min views or increasing days.")
 
-        # CSV download
-        df = pd.DataFrame(viral_list)
-        st.download_button("Download Results (CSV)", df.to_csv(index=False).encode(), "viral_today.csv", "text/csv")
+    status_text.empty()
+    progress_bar.empty()
