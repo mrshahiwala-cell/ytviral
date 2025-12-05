@@ -13,7 +13,7 @@ VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
 CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels"
 
 # Input
-days = st.slider("Last Kitne Din Se Dhundo?", 1, 90, 15)
+days = st.slider("Last Kitne Din Se Dhundo?", 1, 90, 5)
 keyword_input = st.text_area("Keywords (ek line mein ek)", height=160,
     placeholder="reddit stories\naita cheating\ntrue horror stories\nmrbeast\nrevenge stories\nopen marriage")
 video_type = st.selectbox("Video Type Filter", ["All", "Long", "Shorts"])
