@@ -1,17 +1,30 @@
 import streamlit as st
 import requests
 from datetime import datetime, timedelta
+import re
+
 st.set_page_config(page_title="Viral Hunter 2025", layout="wide")
 st.title("Real Viral Videos Only (10K+ Views • 1K+ Subs • New Channels)")
+
 API_KEY = st.secrets["YOUTUBE_API_KEY"]
 SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
 CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels"
+
+# Function to parse ISO 8601 duration to seconds
+def parse_duration(dur):
+    m = re.match(r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?', dur)
+    h = int(m.group(1) or 0)
+    m_val = int(m.group(2) or 0)
+    s = int(m.group(3) or 0)
+    return h * 3600 + m_val * 60 + s
+
 # Input
 days = st.slider("Last Kitne Din Se Dhundo?", 1, 90, 15)
 keyword_input = st.text_area("Keywords (ek line mein ek)", height=160,
     placeholder="reddit stories\naita cheating\ntrue horror stories\nmrbeast\nrevenge stories\nopen marriage")
-video_type = st.selectbox("Video Type", ["All", "Long (>60 sec)", "Shorts (≤60 sec)"])
+video_type = st.selectbox("Video Type", ["All", "Long (over 60s)", "Shorts (60s or less)"])
+
 if st.button("Viral Videos Dhundo Abhi!", type="primary"):
     if not keyword_input.strip():
         st.error("Keyword daal bhai!")
@@ -20,27 +33,8 @@ if st.button("Viral Videos Dhundo Abhi!", type="primary"):
     results = []
     progress = st.progress(0)
    
-    # Correct date format (abhi kabhi error nahi aayega)
+    # Correct date format (ab kabhi error nahi aayega)
     published_after = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    def parse_duration(dur):
-        if not dur:
-            return 0
-        dur = dur.replace("PT", "")
-        hours = 0
-        mins = 0
-        secs = 0
-        if 'H' in dur:
-            parts = dur.split('H')
-            hours = int(parts[0])
-            dur = parts[1]
-        if 'M' in dur:
-            parts = dur.split('M')
-            mins = int(parts[0])
-            dur = parts[1]
-        if 'S' in dur:
-            secs = int(dur.split('S')[0])
-        return hours * 3600 + mins * 60 + secs
-    
     for idx, keyword in enumerate(keywords):
         st.markdown(f"### Searching: **{keyword}**")
        
@@ -68,7 +62,7 @@ if st.button("Viral Videos Dhundo Abhi!", type="primary"):
                     video_ids.append(vid)
                     channel_ids.add(item["snippet"]["channelId"])
                     video_data.append(item)
-            # Video Stats + Duration
+            # Video Stats and Duration
             stats_dict = {}
             for i in range(0, len(video_ids), 50):
                 batch = video_ids[i:i+50]
@@ -79,7 +73,7 @@ if st.button("Viral Videos Dhundo Abhi!", type="primary"):
                         "views": int(s.get("viewCount", 0)),
                         "likes": int(s.get("likeCount", 0)),
                         "comments": int(s.get("commentCount", 0)),
-                        "duration": v["contentDetails"].get("duration", "PT0S")
+                        "duration": v["contentDetails"]["duration"]
                     }
             # Channel Stats + Creation Date
             channel_info = {}
@@ -104,9 +98,19 @@ if st.button("Viral Videos Dhundo Abhi!", type="primary"):
                 likes = stats_dict.get(vid, {}).get("likes", 0)
                 comments = stats_dict.get(vid, {}).get("comments", 0)
                 duration = stats_dict.get(vid, {}).get("duration", "PT0S")
-                duration_secs = parse_duration(duration)
                 subs = channel_info.get(ch_id, {}).get("subs", 0)
                 created_year = channel_info.get(ch_id, {}).get("created_year", "2000")
+               
+                # Parse duration
+                secs = parse_duration(duration)
+                is_short = secs <= 60
+               
+                # Video type filter
+                if video_type == "Shorts (60s or less)" and not is_short:
+                    continue
+                elif video_type == "Long (over 60s)" and is_short:
+                    continue
+               
                 # TERE TARGET WALE FILTERS
                 if views < 10000: # 10K+ views
                     continue
@@ -114,13 +118,10 @@ if st.button("Viral Videos Dhundo Abhi!", type="primary"):
                     continue
                 if int(created_year) < 2024: # Sirf 2024 ya 2025 ke channels
                     continue
-                # Video Type Filter
-                if video_type == "Shorts (≤60 sec)" and duration_secs > 60:
-                    continue
-                if video_type == "Long (>60 sec)" and duration_secs <= 60:
-                    continue
-                # Upload Time
-                upload_time = datetime.strptime(sn["publishedAt"], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M UTC")
+               
+                # Format upload time
+                upload_time = datetime.fromisoformat(sn['publishedAt'].rstrip('Z')).strftime("%Y-%m-%d %H:%M UTC")
+               
                 # FULL OPEN DISPLAY – NO EXPANDER
                 st.markdown("---")
                 col1, col2 = st.columns([3, 1])
