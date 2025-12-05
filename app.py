@@ -1,36 +1,28 @@
 import streamlit as st
 import requests
 from datetime import datetime, timedelta
-import re
+import pandas as pd
+import io
 
 st.set_page_config(page_title="Viral Hunter 2025", layout="wide")
 st.title("Real Viral Videos Only (10K+ Views • 1K+ Subs • New Channels)")
-
 API_KEY = st.secrets["YOUTUBE_API_KEY"]
 SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
 CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels"
 
-# Function to parse ISO 8601 duration to seconds
-def parse_duration(dur):
-    m = re.match(r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?', dur)
-    h = int(m.group(1) or 0)
-    m_val = int(m.group(2) or 0)
-    s = int(m.group(3) or 0)
-    return h * 3600 + m_val * 60 + s
-
 # Input
 days = st.slider("Last Kitne Din Se Dhundo?", 1, 90, 15)
 keyword_input = st.text_area("Keywords (ek line mein ek)", height=160,
     placeholder="reddit stories\naita cheating\ntrue horror stories\nmrbeast\nrevenge stories\nopen marriage")
-video_type = st.selectbox("Video Type", ["All", "Long (over 60s)", "Shorts (60s or less)"])
+video_type = st.selectbox("Video Type Filter", ["All", "Long", "Shorts"])
 
 if st.button("Viral Videos Dhundo Abhi!", type="primary"):
     if not keyword_input.strip():
         st.error("Keyword daal bhai!")
         st.stop()
     keywords = [k.strip() for k in keyword_input.replace(",", "\n").split("\n") if k.strip()]
-    results = []
+    all_results = []
     progress = st.progress(0)
    
     # Correct date format (ab kabhi error nahi aayega)
@@ -69,11 +61,22 @@ if st.button("Viral Videos Dhundo Abhi!", type="primary"):
                 stats = requests.get(VIDEOS_URL, params={"part": "statistics,contentDetails", "id": ",".join(batch), "key": API_KEY}).json()
                 for v in stats.get("items", []):
                     s = v["statistics"]
+                    duration = v["contentDetails"]["duration"]
+                    # Parse duration (PT#H#M#S)
+                    dur_seconds = 0
+                    if 'H' in duration:
+                        dur_seconds += int(duration.split('H')[0].split('T')[-1]) * 3600
+                        duration = duration.split('H')[1]
+                    if 'M' in duration:
+                        dur_seconds += int(duration.split('M')[0]) * 60
+                        duration = duration.split('M')[1]
+                    if 'S' in duration:
+                        dur_seconds += int(duration.split('S')[0])
                     stats_dict[v["id"]] = {
                         "views": int(s.get("viewCount", 0)),
                         "likes": int(s.get("likeCount", 0)),
                         "comments": int(s.get("commentCount", 0)),
-                        "duration": v["contentDetails"]["duration"]
+                        "duration_seconds": dur_seconds
                     }
             # Channel Stats + Creation Date
             channel_info = {}
@@ -88,7 +91,7 @@ if st.button("Viral Videos Dhundo Abhi!", type="primary"):
                         "subs": subs,
                         "created_year": created
                     }
-            # Final Filter & Display
+            # Collect Data
             for info in video_data:
                 vid = info["id"]["videoId"]
                 sn = info["snippet"]
@@ -97,20 +100,12 @@ if st.button("Viral Videos Dhundo Abhi!", type="primary"):
                 views = stats_dict.get(vid, {}).get("views", 0)
                 likes = stats_dict.get(vid, {}).get("likes", 0)
                 comments = stats_dict.get(vid, {}).get("comments", 0)
-                duration = stats_dict.get(vid, {}).get("duration", "PT0S")
+                duration_seconds = stats_dict.get(vid, {}).get("duration_seconds", 0)
                 subs = channel_info.get(ch_id, {}).get("subs", 0)
                 created_year = channel_info.get(ch_id, {}).get("created_year", "2000")
-               
-                # Parse duration
-                secs = parse_duration(duration)
-                is_short = secs <= 60
-               
-                # Video type filter
-                if video_type == "Shorts (60s or less)" and not is_short:
-                    continue
-                elif video_type == "Long (over 60s)" and is_short:
-                    continue
-               
+                upload_time = sn["publishedAt"]
+                upload_dt = datetime.fromisoformat(upload_time.replace("Z", "+00:00"))
+                upload_str = upload_dt.strftime("%Y-%m-%d %H:%M:%S UTC")
                 # TERE TARGET WALE FILTERS
                 if views < 10000: # 10K+ views
                     continue
@@ -118,31 +113,58 @@ if st.button("Viral Videos Dhundo Abhi!", type="primary"):
                     continue
                 if int(created_year) < 2024: # Sirf 2024 ya 2025 ke channels
                     continue
-               
-                # Format upload time
-                upload_time = datetime.fromisoformat(sn['publishedAt'].rstrip('Z')).strftime("%Y-%m-%d %H:%M UTC")
-               
-                # FULL OPEN DISPLAY – NO EXPANDER
-                st.markdown("---")
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.markdown(f"**{sn['title']}**")
-                    st.markdown(f"**Channel:** {sn['channelTitle']} | Subs: **{subs:,}** | Created: **{created_year}**")
-                    st.markdown(f"**Views:** {views:,} | ❤️ {likes:,} | 💬 {comments:,}")
-                    st.markdown(f"**Uploaded:** {upload_time}")
-                    st.markdown(f"**Keyword:** `{keyword}`")
-                    st.markdown(f"[Watch Video](https://www.youtube.com/watch?v={vid})")
-                with col2:
-                    st.image(sn["thumbnails"]["high"]["url"], use_column_width=True)
-               
-                results.append(vid)
+                # Classify type
+                video_category = "Shorts" if duration_seconds < 60 else "Long"
+                all_results.append({
+                    "title": sn['title'],
+                    "channel": sn['channelTitle'],
+                    "subs": subs,
+                    "created_year": created_year,
+                    "views": views,
+                    "likes": likes,
+                    "comments": comments,
+                    "upload_time": upload_str,
+                    "keyword": keyword,
+                    "link": f"https://www.youtube.com/watch?v={vid}",
+                    "thumbnail": sn["thumbnails"]["high"]["url"],
+                    "type": video_category
+                })
         except Exception as e:
             st.error(f"Error: {e}")
         progress.progress((idx + 1) / len(keywords))
-    total = len(results)
-    if total > 0:
-        st.success(f"Total {total} REAL VIRAL VIDEOS mili jo abhi chal rahi hain!")
+    progress.empty()
+    
+    # Filter based on video_type
+    if video_type != "All":
+        all_results = [r for r in all_results if r["type"] == video_type]
+    
+    # Display Results
+    if all_results:
+        st.success(f"Total {len(all_results)} REAL VIRAL VIDEOS mili jo abhi chal rahi hain!")
         st.balloons()
+        for result in all_results:
+            st.markdown("---")
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.markdown(f"**{result['title']}**")
+                st.markdown(f"**Channel:** {result['channel']} | Subs: **{result['subs']:,}** | Created: **{result['created_year']}**")
+                st.markdown(f"**Views:** {result['views']:,} | ❤️ {result['likes']:,} | 💬 {result['comments']:,}")
+                st.markdown(f"**Upload Time:** {result['upload_time']}")
+                st.markdown(f"**Type:** {result['type']}")
+                st.markdown(f"**Keyword:** `{result['keyword']}`")
+                st.markdown(f"[Watch Video]({result['link']})")
+            with col2:
+                st.image(result['thumbnail'], use_column_width=True)
+        
+        # Downloadable CSV
+        df = pd.DataFrame(all_results)
+        csv_buffer = io.StringIO()
+        df.to_csv(csv_buffer, index=False)
+        st.download_button(
+            label="Download Stats CSV",
+            data=csv_buffer.getvalue(),
+            file_name="viral_videos_stats.csv",
+            mime="text/csv"
+        )
     else:
         st.warning("Koi perfect match nahi mila – filters thodi tight hain. 'reddit stories' try karo")
-    progress.empty()
