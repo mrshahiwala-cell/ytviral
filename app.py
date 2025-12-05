@@ -25,10 +25,13 @@ if st.button("Viral Videos Dhundo Abhi!", type="primary"):
     keywords = [k.strip() for k in keyword_input.replace(",", "\n").split("\n") if k.strip()]
     all_results = []
     progress = st.progress(0)
+    quota_exceeded = False
    
     # Correct date format (ab kabhi error nahi aayega)
     published_after = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     for idx, keyword in enumerate(keywords):
+        if quota_exceeded:
+            break
         st.markdown(f"### Searching: **{keyword}**")
        
         params = {
@@ -41,7 +44,16 @@ if st.button("Viral Videos Dhundo Abhi!", type="primary"):
             "key": API_KEY
         }
         try:
-            res = requests.get(SEARCH_URL, params=params).json()
+            response = requests.get(SEARCH_URL, params=params)
+            if response.status_code != 200:
+                error_data = response.json().get('error', {})
+                if error_data.get('code') == 403 and 'quotaExceeded' in error_data.get('message', ''):
+                    st.error("API Quota Exceeded! Data limit over ho gaya.")
+                    quota_exceeded = True
+                    break
+                else:
+                    raise Exception(f"API Error: {response.text}")
+            res = response.json()
             items = res.get("items", [])
             if not items:
                 st.write("→ Koi video nahi mili is keyword pe")
@@ -58,8 +70,19 @@ if st.button("Viral Videos Dhundo Abhi!", type="primary"):
             # Video Stats and Duration
             stats_dict = {}
             for i in range(0, len(video_ids), 50):
+                if quota_exceeded:
+                    break
                 batch = video_ids[i:i+50]
-                stats = requests.get(VIDEOS_URL, params={"part": "statistics,contentDetails", "id": ",".join(batch), "key": API_KEY}).json()
+                response = requests.get(VIDEOS_URL, params={"part": "statistics,contentDetails", "id": ",".join(batch), "key": API_KEY})
+                if response.status_code != 200:
+                    error_data = response.json().get('error', {})
+                    if error_data.get('code') == 403 and 'quotaExceeded' in error_data.get('message', ''):
+                        st.error("API Quota Exceeded! Data limit over ho gaya.")
+                        quota_exceeded = True
+                        break
+                    else:
+                        raise Exception(f"API Error: {response.text}")
+                stats = response.json()
                 for v in stats.get("items", []):
                     s = v["statistics"]
                     duration = v["contentDetails"]["duration"]
@@ -72,12 +95,25 @@ if st.button("Viral Videos Dhundo Abhi!", type="primary"):
                         "comments": int(s.get("commentCount", 0)),
                         "duration_seconds": dur_seconds
                     }
+            if quota_exceeded:
+                continue
             # Channel Stats + Creation Date
             channel_info = {}
             chan_list = list(channel_ids)
             for i in range(0, len(chan_list), 50):
+                if quota_exceeded:
+                    break
                 batch = chan_list[i:i+50]
-                ch = requests.get(CHANNELS_URL, params={"part": "statistics,snippet", "id": ",".join(batch), "key": API_KEY}).json()
+                response = requests.get(CHANNELS_URL, params={"part": "statistics,snippet", "id": ",".join(batch), "key": API_KEY})
+                if response.status_code != 200:
+                    error_data = response.json().get('error', {})
+                    if error_data.get('code') == 403 and 'quotaExceeded' in error_data.get('message', ''):
+                        st.error("API Quota Exceeded! Data limit over ho gaya.")
+                        quota_exceeded = True
+                        break
+                    else:
+                        raise Exception(f"API Error: {response.text}")
+                ch = response.json()
                 for c in ch.get("items", []):
                     created = c["snippet"]["publishedAt"][:4] # Year only
                     subs = int(c["statistics"].get("subscriberCount", 0))
@@ -85,6 +121,8 @@ if st.button("Viral Videos Dhundo Abhi!", type="primary"):
                         "subs": subs,
                         "created_year": created
                     }
+            if quota_exceeded:
+                continue
             # Collect Data
             for info in video_data:
                 vid = info["id"]["videoId"]
@@ -128,6 +166,9 @@ if st.button("Viral Videos Dhundo Abhi!", type="primary"):
             st.error(f"Error: {e}")
         progress.progress((idx + 1) / len(keywords))
     progress.empty()
+    
+    if quota_exceeded:
+        st.stop()
     
     # Filter based on video_type
     if video_type != "All":
