@@ -19,12 +19,13 @@ st.sidebar.header("Settings & Filters")
 days = st.sidebar.slider("Last Kitne Din Se Dhundo?", 1, 60, 7)
 video_type = st.sidebar.selectbox("Video Type", ["All", "Long (5min+)", "Shorts"])
 faceless_only = st.sidebar.checkbox("Sirf Faceless Channels", value=True)
+search_in = st.sidebar.selectbox("Kahan Search Karein?", ["Keywords", "Titles", "Both (Keywords + Titles)"])
 
 keyword_input = st.text_area(
-    "Keywords (ek line mein ek)",
+    "Keywords/Titles (ek line mein ek)",
     height=200,
     value="reddit stories\naita\nam i the asshole\ntrue horror stories\npro revenge\nmr nightmare\nreddit cheating\ncash cow\nstoicism",
-    placeholder="Yahan keywords daalo..."
+    placeholder="Yahan keywords ya titles daalo..."
 )
 
 if st.button("FACELESS VIRAL VIDEOS DHUNDO!", type="primary", use_container_width=True):
@@ -160,6 +161,14 @@ if st.button("FACELESS VIRAL VIDEOS DHUNDO!", type="primary", use_container_widt
                 stats = stats_dict.get(vid, {})
                 ch = channel_info.get(ch_id, {})
                 
+                # Title Search Filter
+                if search_in == "Titles":
+                    if keyword.lower() not in sn["title"].lower():
+                        continue
+                elif search_in == "Both (Keywords + Titles)":
+                    if keyword.lower() not in sn["title"].lower():
+                        continue
+                
                 if stats.get("views", 0) < 10000: 
                     continue
                 if ch.get("subs", 0) < 1000: 
@@ -234,4 +243,4 @@ if st.button("FACELESS VIRAL VIDEOS DHUNDO!", type="primary", use_container_widt
     else:
         st.warning("Kuch nahi mila. Keywords change karke try karo ya days badhao.")
 
-st.caption("Made with ❤️ for Faceless YouTubers | 2025 Edition")
+st.caption("Made with ❤️ for Muhammed Rizwan Qamar | 2025 Edition")
