@@ -6,7 +6,7 @@ import io
 import re
 
 st.set_page_config(page_title="Faceless Viral Hunter 2025", layout="wide")
-st.title("Faceless Viral Videos Only (10K+ Views • 2024-25 Channels)")
+st.title("Faceless Viral Videos Only (10K+ Views • 2025-26 Channels)")
 st.markdown("**Sirf Reddit Stories, AITA, Horror, Cash Cow, Motivation jaise FACELESS channels**")
 
 API_KEY = st.secrets["YOUTUBE_API_KEY"]
@@ -16,19 +16,19 @@ CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels"
 
 # Sidebar
 st.sidebar.header("Settings & Filters")
-days = st.sidebar.slider("Last Kitne Din Se Dhundo?", 1, 60, 7)
+days = st.sidebar.slider("Days?", 1, 60, 7)
 video_type = st.sidebar.selectbox("Video Type", ["All", "Long (5min+)", "Shorts"])
-faceless_only = st.sidebar.checkbox("Sirf Faceless Channels", value=True)
+faceless_only = st.sidebar.checkbox("Only Faceless Channels", value=True)
 search_in = st.sidebar.selectbox("Kahan Search Karein?", ["Keywords", "Titles", "Both (Keywords + Titles)"])
 
 keyword_input = st.text_area(
-    "Keywords/Titles (ek line mein ek)",
+    "Keywords/Titles (Line by Line)",
     height=200,
     value="reddit stories\naita\nam i the asshole\ntrue horror stories\npro revenge\nmr nightmare\nreddit cheating\ncash cow\nstoicism",
     placeholder="Yahan keywords ya titles daalo..."
 )
 
-if st.button("FACELESS VIRAL VIDEOS DHUNDO!", type="primary", use_container_width=True):
+if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=True):
     if not keyword_input.strip():
         st.error("Keyword daal do bhai!")
         st.stop()
@@ -66,7 +66,7 @@ if st.button("FACELESS VIRAL VIDEOS DHUNDO!", type="primary", use_container_widt
                     quota_exceeded = True
                     break
                 else:
-                    st.error("change API or Wait 24 hrs")
+                    st.error("Change API or Wait 24 hrs")
                     continue
             
             items = response.json().get("items", [])
