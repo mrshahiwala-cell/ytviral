@@ -66,12 +66,12 @@ if st.button("FACELESS VIRAL VIDEOS DHUNDO!", type="primary", use_container_widt
                     quota_exceeded = True
                     break
                 else:
-                    st.error("API Error aaya")
+                    st.error("change API or Wait 24 hrs")
                     continue
             
             items = response.json().get("items", [])
             if not items:
-                st.info("Koi video nahi mili")
+                st.info("Not Found")
                 continue
             
             video_ids = []
