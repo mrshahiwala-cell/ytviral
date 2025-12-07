@@ -4,48 +4,45 @@ from datetime import datetime, timedelta
 import pandas as pd
 import io
 import re
-
 st.set_page_config(page_title="Faceless Viral Hunter 2025", layout="wide")
 st.title("Faceless Viral Videos Only (10K+ Views • 2025-26 Channels)")
 st.markdown("**Sirf Reddit Stories, AITA, Horror, Cash Cow, Motivation jaise FACELESS channels**")
-
 API_KEY = st.secrets["YOUTUBE_API_KEY"]
 SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
 CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels"
-
 # Sidebar
 st.sidebar.header("Settings & Filters")
 days = st.sidebar.slider("Days?", 1, 60, 7)
 video_type = st.sidebar.selectbox("Video Type", ["All", "Long (5min+)", "Shorts"])
 faceless_only = st.sidebar.checkbox("Only Faceless Channels", value=True)
 search_in = st.sidebar.selectbox("Kahan Search Karein?", ["Keywords", "Titles", "Both (Keywords + Titles)"])
-
+min_subs = st.sidebar.number_input("Min Subscribers", min_value=0, value=1000)
+max_subs = st.sidebar.number_input("Max Subscribers", min_value=0, value=1000000000)
 keyword_input = st.text_area(
     "Keywords/Titles (Line by Line)",
     height=200,
     value="reddit stories\naita\nam i the asshole\ntrue horror stories\npro revenge\nmr nightmare\nreddit cheating\ncash cow\nstoicism",
     placeholder="Yahan keywords ya titles daalo..."
 )
-
 if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=True):
     if not keyword_input.strip():
         st.error("Keyword daal do bhai!")
         st.stop()
-    
+   
     keywords = [k.strip() for k in keyword_input.split("\n") if k.strip()]
     all_results = []
     progress = st.progress(0)
     quota_exceeded = False
-    
+   
     published_after = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    
+   
     for idx, keyword in enumerate(keywords):
         if quota_exceeded:
             break
-        
+       
         st.markdown(f"### Searching 🔍 **{keyword}**")
-        
+       
         params = {
             "part": "snippet",
             "q": keyword,
@@ -56,7 +53,7 @@ if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=T
             "regionCode": "US",
             "key": API_KEY
         }
-        
+       
         try:
             response = requests.get(SEARCH_URL, params=params)
             if response.status_code != 200:
@@ -68,23 +65,23 @@ if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=T
                 else:
                     st.error("Change API or Wait 24 hrs")
                     continue
-            
+           
             items = response.json().get("items", [])
             if not items:
                 st.info("Not Found")
                 continue
-            
+           
             video_ids = []
             channel_ids = set()
             video_data = []
-            
+           
             for item in items:
                 if item["id"]["kind"] == "youtube#video":
                     vid = item["id"]["videoId"]
                     video_ids.append(vid)
                     channel_ids.add(item["snippet"]["channelId"])
                     video_data.append(item)
-            
+           
             # Video Stats
             stats_dict = {}
             for i in range(0, len(video_ids), 50):
@@ -98,7 +95,7 @@ if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=T
                     if "quotaExceeded" in resp.text:
                         quota_exceeded = True
                     continue
-                
+               
                 for v in resp.json().get("items", []):
                     s = v["statistics"]
                     dur = v["contentDetails"]["duration"]
@@ -109,10 +106,10 @@ if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=T
                         "comments": int(s.get("commentCount", 0)),
                         "duration_seconds": dur_sec
                     }
-            
-            if quota_exceeded: 
+           
+            if quota_exceeded:
                 break
-            
+           
             # Channel Info + Faceless Detection
             channel_info = {}
             chan_list = list(channel_ids)
@@ -127,7 +124,7 @@ if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=T
                     if "quotaExceeded" in resp.text:
                         quota_exceeded = True
                     continue
-                
+               
                 for c in resp.json().get("items", []):
                     sn = c["snippet"]
                     st_data = c["statistics"]
@@ -135,24 +132,28 @@ if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=T
                     profile = sn["thumbnails"]["default"]["url"]
                     banner = br.get("bannerExternalUrl", "")
                     created_year = sn["publishedAt"][:4]
+                    created_date = sn["publishedAt"]
+                    country = sn.get("country", "N/A")
                     subs = int(st_data.get("subscriberCount", 0))
-                    
+                   
                     # Faceless Detection (99% accurate)
                     is_faceless = (
                         "default.jpg" in profile or
                         "s88-c-k-c0x00ffffff-no-rj" in profile or
                         not banner
                     )
-                    
+                   
                     channel_info[c["id"]] = {
                         "subs": subs,
                         "created_year": created_year,
+                        "created_date": created_date,
+                        "country": country,
                         "is_faceless": is_faceless
                     }
-            
-            if quota_exceeded: 
+           
+            if quota_exceeded:
                 break
-            
+           
             # Collect Final Results
             for info in video_data:
                 vid = info["id"]["videoId"]
@@ -160,7 +161,7 @@ if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=T
                 ch_id = sn["channelId"]
                 stats = stats_dict.get(vid, {})
                 ch = channel_info.get(ch_id, {})
-                
+               
                 # Title Search Filter
                 if search_in == "Titles":
                     if keyword.lower() not in sn["title"].lower():
@@ -168,34 +169,40 @@ if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=T
                 elif search_in == "Both (Keywords + Titles)":
                     if keyword.lower() not in sn["title"].lower():
                         continue
-                
-                if stats.get("views", 0) < 10000: 
+               
+                if stats.get("views", 0) < 10000:
                     continue
-                if ch.get("subs", 0) < 1000: 
+                subs = ch.get("subs", 0)
+                if not (min_subs <= subs <= max_subs):
                     continue
-                if int(ch.get("created_year", "2000")) < 2024: 
+                if int(ch.get("created_year", "2000")) < 2024:
                     continue
-                if faceless_only and not ch.get("is_faceless", False): 
+                if faceless_only and not ch.get("is_faceless", False):
                     continue
-                
+               
                 dur_sec = stats.get("duration_seconds", 0)
                 vtype = "Shorts" if dur_sec < 60 else "Long"
-                
-                if video_type == "Long (5min+)" and (vtype == "Shorts" or dur_sec < 300): 
+               
+                if video_type == "Long (5min+)" and (vtype == "Shorts" or dur_sec < 300):
                     continue
-                if video_type == "Shorts" and vtype != "Shorts": 
+                if video_type == "Shorts" and vtype != "Shorts":
                     continue
-                
+               
                 upload = datetime.fromisoformat(sn["publishedAt"].replace("Z", "+00:00")).strftime("%b %d, %Y")
-                
+                created_formatted = datetime.fromisoformat(ch.get("created_date", "2000-01-01T00:00:00Z").replace("Z", "+00:00")).strftime("%b %d, %Y")
+               
                 all_results.append({
                     "Title": sn["title"],
                     "Channel": sn["channelTitle"],
-                    "Subs": f"{ch.get('subs',0):,}",
+                    "ChannelID": ch_id,
+                    "Subs": f"{subs:,}",
                     "Views": f"{stats.get('views',0):,}",
+                    "Views_int": stats.get("views",0),
                     "Likes": stats.get("likes",0),
                     "Comments": stats.get("comments",0),
                     "Uploaded": upload,
+                    "Created": created_formatted,
+                    "Country": ch.get("country", "N/A"),
                     "Type": vtype,
                     "Duration": f"{dur_sec//60}m {dur_sec%60}s" if dur_sec >= 60 else f"{dur_sec}s",
                     "Faceless": "YES" if ch.get("is_faceless") else "NO",
@@ -203,35 +210,37 @@ if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=T
                     "Link": f"https://www.youtube.com/watch?v={vid}",
                     "Thumb": sn["thumbnails"]["high"]["url"]
                 })
-        
+       
         except Exception as e:
             st.error(f"Error: {e}")
-        
+       
         progress.progress((idx + 1) / len(keywords))
-    
+   
     progress.empty()
-    
+   
     if quota_exceeded:
         st.stop()
-    
+   
     if all_results:
-        st.success(f"{len(all_results)} FACELESS VIRAL VIDEOS mil gaye!")
-        st.balloons()
-        
         df = pd.DataFrame(all_results)
+        df = df.sort_values(by="Views_int", ascending=False)
+        df = df.drop_duplicates(subset="ChannelID")
         
+        st.success(f"{len(df)} FACELESS VIRAL VIDEOS mil gaye!")
+        st.balloons()
+       
         for _, r in df.iterrows():
             st.markdown("---")
             col1, col2 = st.columns([3,1])
             with col1:
                 st.markdown(f"**{r['Title']}**")
-                st.markdown(f"**{r['Channel']}** • {r['Subs']} subs • Faceless: **{r['Faceless']}**")
+                st.markdown(f"**{r['Channel']}** • {r['Subs']} subs • Created: {r['Created']} • Country: {r['Country']} • Faceless: **{r['Faceless']}**")
                 st.markdown(f"{r['Views']} views • {r['Likes']:,} likes • Upload: {r['Uploaded']}")
                 st.markdown(f"Type: {r['Type']} • {r['Duration']} • Keyword: {r['Keyword']}")
                 st.markdown(f"[Watch Video]({r['Link']})")
             with col2:
                 st.image(r['Thumb'], use_container_width=True)
-        
+       
         # Download CSV
         csv = df.to_csv(index=False).encode()
         st.download_button(
@@ -242,5 +251,4 @@ if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=T
         )
     else:
         st.warning("Kuch nahi mila. Keywords change karke try karo ya days badhao.")
-
 st.caption("Made with ❤️ for Muhammed Rizwan Qamar | 2025 Edition")
