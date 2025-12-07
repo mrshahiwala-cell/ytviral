@@ -11,6 +11,7 @@ API_KEY = st.secrets["YOUTUBE_API_KEY"]
 SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
 CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels"
+PLAYLIST_ITEMS_URL = "https://www.googleapis.com/youtube/v3/playlistItems"
 # Sidebar
 st.sidebar.header("Settings & Filters")
 days = st.sidebar.slider("Days?", 1, 60, 7)
@@ -30,8 +31,9 @@ if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=T
         st.error("Keyword daal do bhai!")
         st.stop()
    
-    keywords = [k.strip() for k in keyword_input.split("\n") if k.strip()]
+    keywords = [k.strip() for line in keyword_input.splitlines() for k in line.split(",") if k.strip()]
     all_results = []
+    channel_info = {}
     progress = st.progress(0)
     quota_exceeded = False
    
@@ -111,12 +113,11 @@ if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=T
                 break
            
             # Channel Info + Faceless Detection
-            channel_info = {}
-            chan_list = list(channel_ids)
+            chan_list = [cid for cid in list(channel_ids) if cid not in channel_info]
             for i in range(0, len(chan_list), 50):
                 batch = chan_list[i:i+50]
                 resp = requests.get(CHANNELS_URL, params={
-                    "part": "snippet,statistics,brandingSettings",
+                    "part": "snippet,statistics,brandingSettings,contentDetails",
                     "id": ",".join(batch),
                     "key": API_KEY
                 })
@@ -148,7 +149,8 @@ if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=T
                         "created_year": created_year,
                         "created_date": created_date,
                         "country": country,
-                        "is_faceless": is_faceless
+                        "is_faceless": is_faceless,
+                        "uploads": c["contentDetails"]["relatedPlaylists"].get("uploads", None)
                     }
            
             if quota_exceeded:
@@ -175,7 +177,7 @@ if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=T
                 subs = ch.get("subs", 0)
                 if not (min_subs <= subs <= max_subs):
                     continue
-                if int(ch.get("created_year", "2000")) < 2024:
+                if int(ch.get("created_year", "2000")) < 2025:
                     continue
                 if faceless_only and not ch.get("is_faceless", False):
                     continue
@@ -229,12 +231,76 @@ if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=T
         st.success(f"{len(df)} FACELESS VIRAL VIDEOS mil gaye!")
         st.balloons()
        
+        st.markdown("### Fetching channel video counts...")
+        df["Shorts_Count"] = 0
+        df["Long_Count"] = 0
+        for index, row in df.iterrows():
+            if quota_exceeded:
+                break
+            ch_id = row["ChannelID"]
+            uploads = channel_info.get(ch_id, {}).get("uploads")
+            if not uploads:
+                df.at[index, "Shorts_Count"] = "N/A"
+                df.at[index, "Long_Count"] = "N/A"
+                continue
+            video_ids = []
+            page_token = ""
+            while page_token is not None:
+                params = {
+                    "part": "snippet",
+                    "playlistId": uploads,
+                    "maxResults": 50,
+                    "key": API_KEY,
+                    "pageToken": page_token if page_token else ""
+                }
+                try:
+                    resp = requests.get(PLAYLIST_ITEMS_URL, params=params)
+                    if resp.status_code != 200:
+                        error = resp.json().get("error", {})
+                        if error.get("code") == 403 and "quotaExceeded" in error.get("message", ""):
+                            st.error("Quota exceeded while fetching videos.")
+                            quota_exceeded = True
+                        break
+                    data = resp.json()
+                    video_ids.extend([item["snippet"]["resourceId"]["videoId"] for item in data.get("items", [])])
+                    page_token = data.get("nextPageToken")
+                except:
+                    break
+            shorts = 0
+            longs = 0
+            for i in range(0, len(video_ids), 50):
+                if quota_exceeded:
+                    break
+                batch = video_ids[i:i+50]
+                params = {
+                    "part": "contentDetails",
+                    "id": ",".join(batch),
+                    "key": API_KEY
+                }
+                try:
+                    resp = requests.get(VIDEOS_URL, params=params)
+                    if resp.status_code != 200:
+                        if "quotaExceeded" in resp.text:
+                            quota_exceeded = True
+                        continue
+                    for v in resp.json().get("items", []):
+                        dur = v["contentDetails"]["duration"]
+                        dur_sec = sum(int(x or 0) * {"H":3600, "M":60, "S":1}.get(y, 0) for x,y in re.findall(r'(\d+)?([HMS])', dur))
+                        if dur_sec < 60:
+                            shorts += 1
+                        else:
+                            longs += 1
+                except:
+                    continue
+            df.at[index, "Shorts_Count"] = shorts
+            df.at[index, "Long_Count"] = longs
+       
         for _, r in df.iterrows():
             st.markdown("---")
             col1, col2 = st.columns([3,1])
             with col1:
                 st.markdown(f"**{r['Title']}**")
-                st.markdown(f"**{r['Channel']}** • {r['Subs']} subs • Created: {r['Created']} • Country: {r['Country']} • Faceless: **{r['Faceless']}**")
+                st.markdown(f"**{r['Channel']}** • {r['Subs']} subs • Created: {r['Created']} • Country: {r['Country']} • Shorts: {r['Shorts_Count']} • Long: {r['Long_Count']} • Faceless: **{r['Faceless']}**")
                 st.markdown(f"{r['Views']} views • {r['Likes']:,} likes • Upload: {r['Uploaded']}")
                 st.markdown(f"Type: {r['Type']} • {r['Duration']} • Keyword: {r['Keyword']}")
                 st.markdown(f"[Watch Video]({r['Link']})")
