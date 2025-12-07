@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import requests
 from datetime import datetime, timedelta
@@ -323,4 +322,3 @@ if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=T
     else:
         st.warning("Kuch nahi mila. Keywords change karke try karo ya days badhao.")
 st.caption("Made with ❤️ for Muhammed Rizwan Qamar | 2025 Edition")
-```
