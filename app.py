@@ -1,3 +1,4 @@
+```python
 import streamlit as st
 import requests
 from datetime import datetime, timedelta
@@ -20,12 +21,14 @@ faceless_only = st.sidebar.checkbox("Only Faceless Channels", value=True)
 search_in = st.sidebar.selectbox("Kahan Search Karein?", ["Keywords", "Titles", "Both (Keywords + Titles)"])
 min_subs = st.sidebar.number_input("Min Subscribers", min_value=0, value=1000)
 max_subs = st.sidebar.number_input("Max Subscribers", min_value=0, value=1000000000)
+premium_only = st.sidebar.checkbox("Only Premium Countries", value=True)
 keyword_input = st.text_area(
     "Keywords/Titles (Line by Line)",
     height=200,
     value="reddit stories\naita\nam i the asshole\ntrue horror stories\npro revenge\nmr nightmare\nreddit cheating\ncash cow\nstoicism",
     placeholder="Yahan keywords ya titles daalo..."
 )
+premium_countries = ['US', 'CA', 'GB', 'AU', 'NZ', 'DE', 'FR', 'IT', 'ES', 'NL', 'BE', 'AT', 'CH', 'SE', 'NO', 'DK', 'FI', 'IE', 'LU', 'JP', 'KR']
 if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=True):
     if not keyword_input.strip():
         st.error("Keyword daal do bhai!")
@@ -181,6 +184,8 @@ if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=T
                     continue
                 if faceless_only and not ch.get("is_faceless", False):
                     continue
+                if premium_only and ch.get("country", "N/A") not in premium_countries:
+                    continue
                
                 dur_sec = stats.get("duration_seconds", 0)
                 vtype = "Shorts" if dur_sec < 60 else "Long"
@@ -318,3 +323,4 @@ if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=T
     else:
         st.warning("Kuch nahi mila. Keywords change karke try karo ya days badhao.")
 st.caption("Made with ❤️ for Muhammed Rizwan Qamar | 2025 Edition")
+```
