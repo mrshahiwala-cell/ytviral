@@ -15,8 +15,10 @@ PLAYLIST_ITEMS_URL = "https://www.googleapis.com/youtube/v3/playlistItems"
 # Sidebar
 st.sidebar.header("Settings & Filters")
 days = st.sidebar.slider("Days?", 1, 60, 7)
-video_type = st.sidebar.selectbox("Video Type", ["All", "Long (5min+)", "Shorts"])
+search_for = st.sidebar.selectbox("Search For", ["Videos", "Channels"])
+video_type = st.sidebar.selectbox("Video Type", ["All", "Long (5min+)", "Shorts"]) if search_for == "Videos" else None
 faceless_only = st.sidebar.checkbox("Only Faceless Channels", value=True)
+only_monetized = st.sidebar.checkbox("Only Monetized Channels", value=False)
 search_in = st.sidebar.selectbox("Kahan Search Karein?", ["Keywords", "Titles", "Both (Keywords + Titles)"])
 min_subs = st.sidebar.number_input("Min Subscribers", min_value=0, value=1000)
 max_subs = st.sidebar.number_input("Max Subscribers", min_value=0, value=1000000000)
@@ -28,6 +30,20 @@ keyword_input = st.text_area(
     placeholder="Yahan keywords ya titles daalo..."
 )
 premium_countries = ['US', 'CA', 'GB', 'AU', 'NZ', 'DE', 'FR', 'IT', 'ES', 'NL', 'BE', 'AT', 'CH', 'SE', 'NO', 'DK', 'FI', 'IE', 'LU', 'JP', 'KR']
+
+def is_monetized(vid):
+    url = f"https://www.youtube.com/watch?v={vid}"
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
+    }
+    try:
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            return '"yt_ad":1' in response.text
+        return False
+    except:
+        return False
+
 if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=True):
     if not keyword_input.strip():
         st.error("Keyword daal do bhai!")
@@ -50,8 +66,8 @@ if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=T
         params = {
             "part": "snippet",
             "q": keyword,
-            "type": "video",
-            "order": "viewCount",
+            "type": "video" if search_for == "Videos" else "channel",
+            "order": "viewCount" if search_for == "Videos" else "relevance",
             "publishedAfter": published_after,
             "maxResults": 50,
             "regionCode": "US",
@@ -75,44 +91,55 @@ if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=T
                 st.info("Not Found")
                 continue
            
-            video_ids = []
-            channel_ids = set()
-            video_data = []
-           
-            for item in items:
-                if item["id"]["kind"] == "youtube#video":
-                    vid = item["id"]["videoId"]
-                    video_ids.append(vid)
-                    channel_ids.add(item["snippet"]["channelId"])
-                    video_data.append(item)
-           
-            # Video Stats
-            stats_dict = {}
-            for i in range(0, len(video_ids), 50):
-                batch = video_ids[i:i+50]
-                resp = requests.get(VIDEOS_URL, params={
-                    "part": "statistics,contentDetails",
-                    "id": ",".join(batch),
-                    "key": API_KEY
-                })
-                if resp.status_code != 200:
-                    if "quotaExceeded" in resp.text:
-                        quota_exceeded = True
-                    continue
+            if search_for == "Videos":
+                video_ids = []
+                channel_ids = set()
+                video_data = []
                
-                for v in resp.json().get("items", []):
-                    s = v["statistics"]
-                    dur = v["contentDetails"]["duration"]
-                    dur_sec = sum(int(x) * {"H":3600,"M":60,"S":1}[y] for x,y in re.findall(r'(\d+)([HMS])', dur))
-                    stats_dict[v["id"]] = {
-                        "views": int(s.get("viewCount", 0)),
-                        "likes": int(s.get("likeCount", 0)),
-                        "comments": int(s.get("commentCount", 0)),
-                        "duration_seconds": dur_sec
-                    }
-           
-            if quota_exceeded:
-                break
+                for item in items:
+                    if item["id"]["kind"] == "youtube#video":
+                        vid = item["id"]["videoId"]
+                        video_ids.append(vid)
+                        channel_ids.add(item["snippet"]["channelId"])
+                        video_data.append(item)
+               
+                # Video Stats
+                stats_dict = {}
+                for i in range(0, len(video_ids), 50):
+                    batch = video_ids[i:i+50]
+                    resp = requests.get(VIDEOS_URL, params={
+                        "part": "statistics,contentDetails",
+                        "id": ",".join(batch),
+                        "key": API_KEY
+                    })
+                    if resp.status_code != 200:
+                        if "quotaExceeded" in resp.text:
+                            quota_exceeded = True
+                        continue
+                   
+                    for v in resp.json().get("items", []):
+                        s = v["statistics"]
+                        dur = v["contentDetails"]["duration"]
+                        dur_sec = sum(int(x) * {"H":3600,"M":60,"S":1}[y] for x,y in re.findall(r'(\d+)([HMS])', dur))
+                        stats_dict[v["id"]] = {
+                            "views": int(s.get("viewCount", 0)),
+                            "likes": int(s.get("likeCount", 0)),
+                            "comments": int(s.get("commentCount", 0)),
+                            "duration_seconds": dur_sec
+                        }
+               
+                if quota_exceeded:
+                    break
+            else:  # Channels
+                channel_ids = set()
+                channel_data = []
+                for item in items:
+                    if item["id"]["kind"] == "youtube#channel":
+                        ch_id = item["id"]["channelId"]
+                        channel_ids.add(ch_id)
+                        channel_data.append(item)
+                video_data = []  # No videos
+                stats_dict = {}
            
             # Channel Info + Faceless Detection
             chan_list = [cid for cid in list(channel_ids) if cid not in channel_info]
@@ -159,63 +186,123 @@ if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=T
                 break
            
             # Collect Final Results
-            for info in video_data:
-                vid = info["id"]["videoId"]
-                sn = info["snippet"]
-                ch_id = sn["channelId"]
-                stats = stats_dict.get(vid, {})
-                ch = channel_info.get(ch_id, {})
-               
-                # Title Search Filter
-                if search_in == "Titles":
-                    if keyword.lower() not in sn["title"].lower():
+            if search_for == "Videos":
+                for info in video_data:
+                    vid = info["id"]["videoId"]
+                    sn = info["snippet"]
+                    ch_id = sn["channelId"]
+                    stats = stats_dict.get(vid, {})
+                    ch = channel_info.get(ch_id, {})
+                   
+                    # Title Search Filter
+                    if search_in == "Titles":
+                        if keyword.lower() not in sn["title"].lower():
+                            continue
+                    elif search_in == "Both (Keywords + Titles)":
+                        if keyword.lower() not in sn["title"].lower():
+                            continue
+                   
+                    if stats.get("views", 0) < 10000:
                         continue
-                elif search_in == "Both (Keywords + Titles)":
-                    if keyword.lower() not in sn["title"].lower():
+                    subs = ch.get("subs", 0)
+                    if not (min_subs <= subs <= max_subs):
                         continue
-               
-                if stats.get("views", 0) < 10000:
-                    continue
-                subs = ch.get("subs", 0)
-                if not (min_subs <= subs <= max_subs):
-                    continue
-                if int(ch.get("created_year", "2000")) < 2025:
-                    continue
-                if faceless_only and not ch.get("is_faceless", False):
-                    continue
-                if premium_only and ch.get("country", "N/A") not in premium_countries:
-                    continue
-               
-                dur_sec = stats.get("duration_seconds", 0)
-                vtype = "Shorts" if dur_sec < 60 else "Long"
-               
-                if video_type == "Long (5min+)" and (vtype == "Shorts" or dur_sec < 300):
-                    continue
-                if video_type == "Shorts" and vtype != "Shorts":
-                    continue
-               
-                upload = datetime.fromisoformat(sn["publishedAt"].replace("Z", "+00:00")).strftime("%b %d, %Y")
-                created_formatted = datetime.fromisoformat(ch.get("created_date", "2000-01-01T00:00:00Z").replace("Z", "+00:00")).strftime("%b %d, %Y")
-               
-                all_results.append({
-                    "Title": sn["title"],
-                    "Channel": sn["channelTitle"],
-                    "ChannelID": ch_id,
-                    "Subs": f"{subs:,}",
-                    "Views": f"{stats.get('views',0):,}",
-                    "Views_int": stats.get("views",0),
-                    "Likes": stats.get("likes",0),
-                    "Comments": stats.get("comments",0),
-                    "Uploaded": upload,
-                    "Created": created_formatted,
-                    "Country": ch.get("country", "N/A"),
-                    "Type": vtype,
-                    "Duration": f"{dur_sec//60}m {dur_sec%60}s" if dur_sec >= 60 else f"{dur_sec}s",
-                    "Faceless": "YES" if ch.get("is_faceless") else "NO",
-                    "Keyword": keyword,
-                    "Link": f"https://www.youtube.com/watch?v={vid}",
-                    "Thumb": sn["thumbnails"]["high"]["url"]
-                })
+                    if int(ch.get("created_year", "2000")) < 2025:
+                        continue
+                    if faceless_only and not ch.get("is_faceless", False):
+                        continue
+                    if premium_only and ch.get("country", "N/A") not in premium_countries:
+                        continue
+                    if only_monetized and not is_monetized(vid):
+                        continue
+                   
+                    dur_sec = stats.get("duration_seconds", 0)
+                    vtype = "Shorts" if dur_sec < 60 else "Long"
+                   
+                    if video_type == "Long (5min+)" and (vtype == "Shorts" or dur_sec < 300):
+                        continue
+                    if video_type == "Shorts" and vtype != "Shorts":
+                        continue
+                   
+                    upload = datetime.fromisoformat(sn["publishedAt"].replace("Z", "+00:00")).strftime("%b %d, %Y")
+                    created_formatted = datetime.fromisoformat(ch.get("created_date", "2000-01-01T00:00:00Z").replace("Z", "+00:00")).strftime("%b %d, %Y")
+                   
+                    all_results.append({
+                        "Title": sn["title"],
+                        "Channel": sn["channelTitle"],
+                        "ChannelID": ch_id,
+                        "Subs": f"{subs:,}",
+                        "Views": f"{stats.get('views',0):,}",
+                        "Views_int": stats.get("views",0),
+                        "Likes": stats.get("likes",0),
+                        "Comments": stats.get("comments",0),
+                        "Uploaded": upload,
+                        "Created": created_formatted,
+                        "Country": ch.get("country", "N/A"),
+                        "Type": vtype,
+                        "Duration": f"{dur_sec//60}m {dur_sec%60}s" if dur_sec >= 60 else f"{dur_sec}s",
+                        "Faceless": "YES" if ch.get("is_faceless") else "NO",
+                        "Monetized": "YES" if only_monetized else "Unknown",
+                        "Keyword": keyword,
+                        "Link": f"https://www.youtube.com/watch?v={vid}",
+                        "Thumb": sn["thumbnails"]["high"]["url"]
+                    })
+            else:  # Channels
+                for info in channel_data:
+                    ch_id = info["id"]["channelId"]
+                    sn = info["snippet"]
+                    ch = channel_info.get(ch_id, {})
+                   
+                    # Title Search Filter - for channels, use channel title or description?
+                    if search_in in ["Titles", "Both (Keywords + Titles)"]:
+                        if keyword.lower() not in sn["title"].lower() and keyword.lower() not in sn["description"].lower():
+                            continue
+                   
+                    subs = ch.get("subs", 0)
+                    if not (min_subs <= subs <= max_subs):
+                        continue
+                    if int(ch.get("created_year", "2000")) < 2025:
+                        continue
+                    if faceless_only and not ch.get("is_faceless", False):
+                        continue
+                    if premium_only and ch.get("country", "N/A") not in premium_countries:
+                        continue
+                   
+                    # For monetized, need to get a video
+                    monetized = False
+                    if only_monetized:
+                        uploads = ch.get("uploads")
+                        if uploads:
+                            params_pl = {
+                                "part": "snippet",
+                                "playlistId": uploads,
+                                "maxResults": 1,
+                                "key": API_KEY
+                            }
+                            resp_pl = requests.get(PLAYLIST_ITEMS_URL, params=params_pl)
+                            if resp_pl.status_code == 200:
+                                items_pl = resp_pl.json().get("items", [])
+                                if items_pl:
+                                    vid = items_pl[0]["snippet"]["resourceId"]["videoId"]
+                                    monetized = is_monetized(vid)
+                        if not monetized:
+                            continue
+                   
+                    created_formatted = datetime.fromisoformat(ch.get("created_date", "2000-01-01T00:00:00Z").replace("Z", "+00:00")).strftime("%b %d, %Y")
+                   
+                    all_results.append({
+                        "Channel": sn["title"],
+                        "ChannelID": ch_id,
+                        "Subs": f"{subs:,}",
+                        "Created": created_formatted,
+                        "Country": ch.get("country", "N/A"),
+                        "Faceless": "YES" if ch.get("is_faceless") else "NO",
+                        "Monetized": "YES" if monetized else "Unknown",
+                        "Keyword": keyword,
+                        "Link": f"https://www.youtube.com/channel/{ch_id}",
+                        "Thumb": sn["thumbnails"]["high"]["url"],
+                        "Description": sn["description"][:200] + "..." if sn["description"] else ""
+                    })
        
         except Exception as e:
             st.error(f"Error: {e}")
@@ -229,85 +316,94 @@ if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=T
    
     if all_results:
         df = pd.DataFrame(all_results)
-        df = df.sort_values(by="Views_int", ascending=False)
+        if search_for == "Videos":
+            df = df.sort_values(by="Views_int", ascending=False)
         df = df.drop_duplicates(subset="ChannelID")
         
-        st.success(f"{len(df)} FACELESS VIRAL VIDEOS mil gaye!")
+        st.success(f"{len(df)} FACELESS VIRAL {'VIDEOS' if search_for == 'Videos' else 'CHANNELS'} mil gaye!")
         st.balloons()
        
-        st.markdown("### Fetching channel video counts...")
-        df["Shorts_Count"] = 0
-        df["Long_Count"] = 0
-        for index, row in df.iterrows():
-            if quota_exceeded:
-                break
-            ch_id = row["ChannelID"]
-            uploads = channel_info.get(ch_id, {}).get("uploads")
-            if not uploads:
-                df.at[index, "Shorts_Count"] = "N/A"
-                df.at[index, "Long_Count"] = "N/A"
-                continue
-            video_ids = []
-            page_token = ""
-            while page_token is not None:
-                params = {
-                    "part": "snippet",
-                    "playlistId": uploads,
-                    "maxResults": 50,
-                    "key": API_KEY,
-                    "pageToken": page_token if page_token else ""
-                }
-                try:
-                    resp = requests.get(PLAYLIST_ITEMS_URL, params=params)
-                    if resp.status_code != 200:
-                        error = resp.json().get("error", {})
-                        if error.get("code") == 403 and "quotaExceeded" in error.get("message", ""):
-                            st.error("Quota exceeded while fetching videos.")
-                            quota_exceeded = True
-                        break
-                    data = resp.json()
-                    video_ids.extend([item["snippet"]["resourceId"]["videoId"] for item in data.get("items", [])])
-                    page_token = data.get("nextPageToken")
-                except:
-                    break
-            shorts = 0
-            longs = 0
-            for i in range(0, len(video_ids), 50):
+        if search_for == "Videos":
+            st.markdown("### Fetching channel video counts...")
+            df["Shorts_Count"] = 0
+            df["Long_Count"] = 0
+            for index, row in df.iterrows():
                 if quota_exceeded:
                     break
-                batch = video_ids[i:i+50]
-                params = {
-                    "part": "contentDetails",
-                    "id": ",".join(batch),
-                    "key": API_KEY
-                }
-                try:
-                    resp = requests.get(VIDEOS_URL, params=params)
-                    if resp.status_code != 200:
-                        if "quotaExceeded" in resp.text:
-                            quota_exceeded = True
-                        continue
-                    for v in resp.json().get("items", []):
-                        dur = v["contentDetails"]["duration"]
-                        dur_sec = sum(int(x or 0) * {"H":3600, "M":60, "S":1}.get(y, 0) for x,y in re.findall(r'(\d+)?([HMS])', dur))
-                        if dur_sec < 60:
-                            shorts += 1
-                        else:
-                            longs += 1
-                except:
+                ch_id = row["ChannelID"]
+                uploads = channel_info.get(ch_id, {}).get("uploads")
+                if not uploads:
+                    df.at[index, "Shorts_Count"] = "N/A"
+                    df.at[index, "Long_Count"] = "N/A"
                     continue
-            df.at[index, "Shorts_Count"] = shorts
-            df.at[index, "Long_Count"] = longs
+                video_ids = []
+                page_token = ""
+                while page_token is not None:
+                    params = {
+                        "part": "snippet",
+                        "playlistId": uploads,
+                        "maxResults": 50,
+                        "key": API_KEY,
+                        "pageToken": page_token if page_token else ""
+                    }
+                    try:
+                        resp = requests.get(PLAYLIST_ITEMS_URL, params=params)
+                        if resp.status_code != 200:
+                            error = resp.json().get("error", {})
+                            if error.get("code") == 403 and "quotaExceeded" in error.get("message", ""):
+                                st.error("Quota exceeded while fetching videos.")
+                                quota_exceeded = True
+                            break
+                        data = resp.json()
+                        video_ids.extend([item["snippet"]["resourceId"]["videoId"] for item in data.get("items", [])])
+                        page_token = data.get("nextPageToken")
+                    except:
+                        break
+                shorts = 0
+                longs = 0
+                for i in range(0, len(video_ids), 50):
+                    if quota_exceeded:
+                        break
+                    batch = video_ids[i:i+50]
+                    params = {
+                        "part": "contentDetails",
+                        "id": ",".join(batch),
+                        "key": API_KEY
+                    }
+                    try:
+                        resp = requests.get(VIDEOS_URL, params=params)
+                        if resp.status_code != 200:
+                            if "quotaExceeded" in resp.text:
+                                quota_exceeded = True
+                            continue
+                        for v in resp.json().get("items", []):
+                            dur = v["contentDetails"]["duration"]
+                            dur_sec = sum(int(x or 0) * {"H":3600, "M":60, "S":1}.get(y, 0) for x,y in re.findall(r'(\d+)?([HMS])', dur))
+                            if dur_sec < 60:
+                                shorts += 1
+                            else:
+                                longs += 1
+                    except:
+                        continue
+                df.at[index, "Shorts_Count"] = shorts
+                df.at[index, "Long_Count"] = longs
        
         for _, r in df.iterrows():
             st.markdown("---")
             col1, col2 = st.columns([3,1])
             with col1:
-                st.markdown(f"**{r['Title']}**")
-                st.markdown(f"**{r['Channel']}** • {r['Subs']} subs • Created: {r['Created']} • Country: {r['Country']} • Shorts: {r['Shorts_Count']} • Long: {r['Long_Count']} • Faceless: **{r['Faceless']}**")
-                st.markdown(f"{r['Views']} views • {r['Likes']:,} likes • Upload: {r['Uploaded']}")
-                st.markdown(f"Type: {r['Type']} • {r['Duration']} • Keyword: {r['Keyword']}")
-                st.markdown(f"[Watch Video]({r['Link']})")
+                if search_for == "Videos":
+                    st.markdown(f"**{r['Title']}**")
+                    st.markdown(f"**{r['Channel']}** • {r['Subs']} subs • Created: {r['Created']} • Country: {r['Country']} • Shorts: {r['Shorts_Count']} • Long: {r['Long_Count']} • Faceless: **{r['Faceless']}** • Monetized: **{r['Monetized']}**")
+                    st.markdown(f"{r['Views']} views • {r['Likes']:,} likes • Upload: {r['Uploaded']}")
+                    st.markdown(f"Type: {r['Type']} • {r['Duration']} • Keyword: {r['Keyword']}")
+                    st.markdown(f"[Watch Video]({r['Link']})")
+                else:
+                    st.markdown(f"**{r['Channel']}**")
+                    st.markdown(f"{r['Subs']} subs • Created: {r['Created']} • Country: {r['Country']} • Faceless: **{r['Faceless']}** • Monetized: **{r['Monetized']}**")
+                    st.markdown(f"Description: {r['Description']}")
+                    st.markdown(f"Keyword: {r['Keyword']}")
+                    st.markdown(f"[View Channel]({r['Link']})")
             with col2:
                 st.image(r['Thumb'], use_container_width=True)
        
