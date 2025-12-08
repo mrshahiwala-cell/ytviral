@@ -4,22 +4,29 @@ from datetime import datetime, timedelta
 import pandas as pd
 import re
 
+
+# ------------------------------------------------------------
+# APP CONFIG
+# ------------------------------------------------------------
 st.set_page_config(page_title="Faceless Viral Hunter 2025", layout="wide")
 st.title("Faceless Viral Videos Only (10K+ Views • 2025-26 Channels)")
 st.markdown("**Sirf Reddit Stories, AITA, Horror, Cash Cow, Motivation jaise FACELESS channels**")
 
 API_KEY = st.secrets["YOUTUBE_API_KEY"]
+
 SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
 CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels"
-PLAYLIST_ITEMS_URL = "https://www.googleapis.com/youtube/v3/playlistItems"
 
-# Sidebar Filters
+
+# ------------------------------------------------------------
+# SIDEBAR
+# ------------------------------------------------------------
 st.sidebar.header("Settings & Filters")
 days = st.sidebar.slider("Days?", 1, 60, 7)
 video_type = st.sidebar.selectbox("Video Type", ["All", "Long (5min+)", "Shorts"])
 faceless_only = st.sidebar.checkbox("Only Faceless Channels", value=True)
-search_in = st.sidebar.selectbox("Kahan Search Karein?", ["Keywords", "Titles", "Both (Keywords + Titles)"])
+search_in = st.sidebar.selectbox("Search In?", ["Keywords", "Titles", "Both"])
 min_subs = st.sidebar.number_input("Min Subscribers", min_value=0, value=1000)
 max_subs = st.sidebar.number_input("Max Subscribers", min_value=0, value=1000000000)
 premium_only = st.sidebar.checkbox("Only Premium Countries", value=True)
@@ -27,34 +34,72 @@ premium_only = st.sidebar.checkbox("Only Premium Countries", value=True)
 keyword_input = st.text_area(
     "Keywords/Titles (Line by Line)",
     height=200,
-    value="reddit stories\naita\nam i the asshole\ntrue horror stories\npro revenge\nmr nightmare\nreddit cheating\ncash cow\nstoicism",
-    placeholder="Yahan keywords ya titles daalo..."
+    value=(
+        "reddit stories\naita\nam i the asshole\ntrue horror stories\n"
+        "pro revenge\nmr nightmare\nreddit cheating\ncash cow\nstoicism"
+    )
 )
 
-premium_countries = ['US', 'CA', 'GB', 'AU', 'NZ', 'DE', 'FR', 'IT', 'ES', 'NL', 'BE', 'AT', 'CH', 'SE', 'NO', 'DK', 'FI', 'IE', 'LU', 'JP', 'KR']
+premium_countries = {
+    'US','CA','GB','AU','NZ','DE','FR','IT','ES','NL','BE','AT','CH',
+    'SE','NO','DK','FI','IE','LU','JP','KR'
+}
 
+
+# ------------------------------------------------------------
+# HELPERS
+# ------------------------------------------------------------
+def fetch_json(url, params):
+    """Safe wrapper for requests.get"""
+    resp = requests.get(url, params=params)
+    if resp.status_code != 200:
+        if "quotaExceeded" in resp.text:
+            return "QUOTA"
+        return None
+    return resp.json()
+
+
+def parse_duration(duration):
+    """Convert ISO 8601 duration to seconds"""
+    return sum(int(v) * {"H": 3600, "M": 60, "S": 1}[u]
+               for v, u in re.findall(r"(\d+)([HMS])", duration))
+
+
+def detect_faceless(profile_url, banner_url):
+    """Simple faceless detection"""
+    return (
+        "default.jpg" in profile_url
+        or "s88-c-k-c0x00ffffff-no-rj" in profile_url
+        or not banner_url
+    )
+
+
+# ------------------------------------------------------------
+# MAIN ACTION
+# ------------------------------------------------------------
 if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=True):
+
     if not keyword_input.strip():
         st.error("Keyword daal do bhai!")
         st.stop()
 
-    keywords = [k.strip() for line in keyword_input.splitlines() for k in line.split(",") if k.strip()]
+    keywords = [kw.strip() for line in keyword_input.splitlines()
+                for kw in line.split(",") if kw.strip()]
+
     all_results = []
-    channel_info = {}
+    channel_cache = {}
     progress = st.progress(0)
-    quota_exceeded = False
 
     published_after = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    for idx, keyword in enumerate(keywords):
-        if quota_exceeded:
-            break
+    # LOOP THROUGH KEYWORDS
+    for idx, kw in enumerate(keywords):
 
-        st.markdown(f"### Searching 🔍 **{keyword}**")
+        st.markdown(f"### Searching 🔍 **{kw}**")
 
-        params = {
+        search_params = {
             "part": "snippet",
-            "q": keyword,
+            "q": kw,
             "type": "video",
             "order": "viewCount",
             "publishedAfter": published_after,
@@ -63,206 +108,189 @@ if st.button("Find FACELESS VIRAL VIDEOS", type="primary", use_container_width=T
             "key": API_KEY
         }
 
-        try:
-            response = requests.get(SEARCH_URL, params=params)
-            if response.status_code != 200:
-                error = response.json().get("error", {})
-                if error.get("code") == 403 and "quotaExceeded" in error.get("message", ""):
-                    st.error("Daily API Quota Khatam! Kal try karo.")
-                    quota_exceeded = True
-                    break
-                else:
-                    st.error("API Error – Change key or wait 24 hrs")
+        data = fetch_json(SEARCH_URL, search_params)
+        if data == "QUOTA":
+            st.error("Daily API Quota Khatam! Kal try karo.")
+            st.stop()
+        if not data:
+            st.error("API Error – wait or change key")
+            continue
+
+        items = data.get("items", [])
+        if not items:
+            st.info("Koi video nahi mila is keyword ke liye")
+            continue
+
+        # Extract IDs
+        video_ids = [i["id"]["videoId"] for i in items]
+        channel_ids = {i["snippet"]["channelId"] for i in items}
+
+        # ------------------------------------------------------------
+        # VIDEO DETAILS
+        # ------------------------------------------------------------
+        video_stats = {}
+        params = {
+            "part": "statistics,contentDetails",
+            "id": ",".join(video_ids),
+            "key": API_KEY
+        }
+        vid_data = fetch_json(VIDEOS_URL, params)
+        if vid_data == "QUOTA":
+            st.error("Daily API Quota Khatam! Kal try karo.")
+            st.stop()
+
+        for v in vid_data.get("items", []):
+            dur_sec = parse_duration(v["contentDetails"]["duration"])
+            s = v["statistics"]
+
+            video_stats[v["id"]] = {
+                "views": int(s.get("viewCount", 0)),
+                "likes": int(s.get("likeCount", 0)),
+                "comments": int(s.get("commentCount", 0)),
+                "duration": dur_sec
+            }
+
+        # ------------------------------------------------------------
+        # CHANNEL DETAILS (cache)
+        # ------------------------------------------------------------
+        new_channels = [cid for cid in channel_ids if cid not in channel_cache]
+
+        if new_channels:
+            params = {
+                "part": "snippet,statistics,brandingSettings,contentDetails",
+                "id": ",".join(new_channels),
+                "key": API_KEY
+            }
+            ch_data = fetch_json(CHANNELS_URL, params)
+
+            if ch_data == "QUOTA":
+                st.error("Daily API Quota Khatam! Kal try karo.")
+                st.stop()
+
+            for c in ch_data.get("items", []):
+                sn = c["snippet"]
+                stats = c["statistics"]
+                brand_img = c.get("brandingSettings", {}).get("image", {})
+                profile = sn["thumbnails"]["default"]["url"]
+                banner = brand_img.get("bannerExternalUrl", "")
+
+                channel_cache[c["id"]] = {
+                    "subs": int(stats.get("subscriberCount", 0)),
+                    "created": sn["publishedAt"],
+                    "country": sn.get("country", "N/A"),
+                    "faceless": detect_faceless(profile, banner)
+                }
+
+        # ------------------------------------------------------------
+        # FILTER VIDEOS
+        # ------------------------------------------------------------
+        for item in items:
+            sn = item["snippet"]
+            vid = item["id"]["videoId"]
+            cid = sn["channelId"]
+            stats = video_stats.get(vid, {})
+            ch = channel_cache.get(cid, {})
+
+            # Title/Keyword filter
+            if search_in != "Keywords":
+                if kw.lower() not in sn["title"].lower():
                     continue
 
-            items = response.json().get("items", [])
-            if not items:
-                st.info("Koi video nahi mila is keyword ke liye")
+            # Video stats filters
+            if stats.get("views", 0) < 10000:
                 continue
 
-            # Extract video & channel IDs
-            video_ids = []
-            channel_ids = set()
-            video_data = []
+            subs = ch.get("subs", 0)
+            if not (min_subs <= subs <= max_subs):
+                continue
 
-            for item in items:
-                if item["id"]["kind"] == "youtube#video":
-                    vid = item["id"]["videoId"]
-                    video_ids.append(vid)
-                    channel_ids.add(item["snippet"]["channelId"])
-                    video_data.append(item)
+            # New channels only (2025+)
+            created_year = int(ch.get("created", "2000")[:4])
+            if created_year < 2025:
+                continue
 
-            # Get video stats (views, duration, etc.)
-            stats_dict = {}
-            for i in range(0, len(video_ids), 50):
-                batch = video_ids[i:i+50]
-                resp = requests.get(VIDEOS_URL, params={
-                    "part": "statistics,contentDetails",
-                    "id": ",".join(batch),
-                    "key": API_KEY
-                })
-                if resp.status_code != 200:
-                    if "quotaExceeded" in resp.text:
-                        quota_exceeded = True
-                    continue
+            # Faceless filter
+            if faceless_only and not ch.get("faceless"):
+                continue
 
-                for v in resp.json().get("items", []):
-                    s = v["statistics"]
-                    dur = v["contentDetails"]["duration"]
-                    dur_sec = sum(int(x) * {"H":3600, "M":60, "S":1}[y] 
-                                for x, y in re.findall(r'(\d+)([HMS])', dur))
-                    stats_dict[v["id"]] = {
-                        "views": int(s.get("viewCount", 0)),
-                        "likes": int(s.get("likeCount", 0)),
-                        "comments": int(s.get("commentCount", 0)),
-                        "duration_seconds": dur_sec
-                    }
+            # Country filter
+            if premium_only and ch.get("country") not in premium_countries:
+                continue
 
-            if quota_exceeded:
-                break
+            # Short/Long filter
+            dur = stats.get("duration", 0)
+            vtype = "Shorts" if dur < 60 else "Long"
 
-            # Get channel details + faceless detection
-            chan_list = [cid for cid in channel_ids if cid not in channel_info]
-            for i in range(0, len(chan_list), 50):
-                batch = chan_list[i:i+50]
-                resp = requests.get(CHANNELS_URL, params={
-                    "part": "snippet,statistics,brandingSettings,contentDetails",
-                    "id": ",".join(batch),
-                    "key": API_KEY
-                })
-                if resp.status_code != 200:
-                    if "quotaExceeded" in resp.text:
-                        quota_exceeded = True
-                    continue
+            if video_type == "Long (5min+)" and (dur < 300):
+                continue
+            if video_type == "Shorts" and vtype != "Shorts":
+                continue
 
-                for c in resp.json().get("items", []):
-                    sn = c["snippet"]
-                    st_data = c["statistics"]
-                    br = c.get("brandingSettings", {}).get("image", {})
-                    profile = sn["thumbnails"]["default"]["url"]
-                    banner = br.get("bannerExternalUrl", "")
-                    created_year = sn["publishedAt"][:4]
-                    created_date = sn["publishedAt"]
-                    country = sn.get("country", "N/A")
-                    subs = int(st_data.get("subscriberCount", 0))
-
-                    # Faceless detection
-                    is_faceless = (
-                        "default.jpg" in profile or
-                        "s88-c-k-c0x00ffffff-no-rj" in profile or
-                        not banner
-                    )
-
-                    channel_info[c["id"]] = {
-                        "subs": subs,
-                        "created_year": created_year,
-                        "created_date": created_date,
-                        "country": country,
-                        "is_faceless": is_faceless,
-                        "uploads": c["contentDetails"]["relatedPlaylists"].get("uploads")
-                    }
-
-            if quota_exceeded:
-                break
-
-            # Filter and collect results
-            for info in video_data:
-                vid = info["id"]["videoId"]
-                sn = info["snippet"]
-                ch_id = sn["channelId"]
-                stats = stats_dict.get(vid, {})
-                ch = channel_info.get(ch_id, {})
-
-                # Title/Keyword filter
-                if search_in in ["Titles", "Both (Keywords + Titles)"]:
-                    if keyword.lower() not in sn["title"].lower():
-                        continue
-
-                if stats.get("views", 0) < 10000:
-                    continue
-                subs = ch.get("subs", 0)
-                if not (min_subs <= subs <= max_subs):
-                    continue
-                if int(ch.get("created_year", "2000")) < 2025:
-                    continue
-                if faceless_only and not ch.get("is_faceless", False):
-                    continue
-                if premium_only and ch.get("country", "N/A") not in premium_countries:
-                    continue
-
-                dur_sec = stats.get("duration_seconds", 0)
-                vtype = "Shorts" if dur_sec < 60 else "Long"
-
-                if video_type == "Long (5min+)" and (vtype == "Shorts" or dur_sec < 300):
-                    continue
-                if video_type == "Shorts" and vtype != "Shorts":
-                    continue
-
-                upload_date = datetime.fromisoformat(sn["publishedAt"].replace("Z", "+00:00")).strftime("%b %d, %Y")
-                created_date = datetime.fromisoformat(ch.get("created_date", "2000-01-01T00:00:00Z").replace("Z", "+00:00")).strftime("%b %d, %Y")
-
-                all_results.append({
-                    "Title": sn["title"],
-                    "Channel": sn["channelTitle"],
-                    "ChannelID": ch_id,
-                    "Subs": f"{subs:,}",
-                    "Views": f"{stats.get('views', 0):,}",
-                    "Views_int": stats.get("views", 0),
-                    "Likes": stats.get("likes", 0),
-                    "Comments": stats.get("comments", 0),
-                    "Uploaded": upload_date,
-                    "Created": created_date,
-                    "Country": ch.get("country", "N/A"),
-                    "Type": vtype,
-                    "Duration": f"{dur_sec//60}m {dur_sec%60}s" if dur_sec >= 60 else f"{dur_sec}s",
-                    "Faceless": "YES" if ch.get("is_faceless") else "NO",
-                    "Keyword": keyword,
-                    "Link": f"https://www.youtube.com/watch?v={vid}",
-                    "Thumb": sn["thumbnails"]["high"]["url"]
-                })
-
-        except Exception as e:
-            st.error(f"Error: {e}")
+            # Add result
+            all_results.append({
+                "Title": sn["title"],
+                "Channel": sn["channelTitle"],
+                "ChannelID": cid,
+                "Subs": subs,
+                "Views": stats.get("views"),
+                "Likes": stats.get("likes"),
+                "Comments": stats.get("comments"),
+                "Uploaded": sn["publishedAt"],
+                "Created": ch.get("created"),
+                "Country": ch.get("country"),
+                "Type": vtype,
+                "Duration": dur,
+                "Faceless": "YES" if ch.get("faceless") else "NO",
+                "Keyword": kw,
+                "Thumb": sn["thumbnails"]["high"]["url"],
+                "Link": f"https://www.youtube.com/watch?v={vid}"
+            })
 
         progress.progress((idx + 1) / len(keywords))
 
     progress.empty()
 
-    if quota_exceeded:
+    # ------------------------------------------------------------
+    # RESULTS
+    # ------------------------------------------------------------
+    if not all_results:
+        st.warning("Kuch nahi mila. Keywords change karo ya days badhao.")
         st.stop()
 
-    if all_results:
-        df = pd.DataFrame(all_results)
-        df = df.sort_values(by="Views_int", ascending=False)
-        df = df.drop_duplicates(subset="ChannelID")
+    df = pd.DataFrame(all_results)
+    df = df.sort_values(by="Views", ascending=False)
+    df = df.drop_duplicates(subset="ChannelID")
 
-        st.success(f"{len(df)} FACELESS VIRAL VIDEOS mil gaye! 🎉")
-        st.balloons()
+    st.success(f"{len(df)} FACELESS VIRAL VIDEOS mil gaye! 🎉")
+    st.balloons()
 
-        # Optional: Add Shorts/Long video count (comment out if quota is tight)
-        # ... [same video count code as before, optional]
+    # DISPLAY RESULTS
+    for _, r in df.iterrows():
+        st.markdown("---")
+        col1, col2 = st.columns([3, 1])
 
-        for _, r in df.iterrows():
-            st.markdown("---")
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.markdown(f"**{r['Title']}**")
-                st.markdown(f"**{r['Channel']}** • {r['Subs']} subs • Created: {r['Created']} • {r['Country']} • Faceless: **{r['Faceless']}**")
-                st.markdown(f"{r['Views']} views • Upload: {r['Uploaded']} • Type: {r['Type']} • {r['Duration']}")
-                st.markdown(f"[Watch Video]({r['Link']})")
-            with col2:
-                st.image(r['Thumb'], use_container_width=True)
+        with col1:
+            st.markdown(f"**{r['Title']}**")
+            st.markdown(
+                f"**{r['Channel']}** • {r['Subs']:,} subs • Country: {r['Country']} • "
+                f"Faceless: **{r['Faceless']}**"
+            )
+            st.markdown(
+                f"{r['Views']:,} views • Type: {r['Type']} • Duration: {r['Duration']}s"
+            )
+            st.markdown(f"[Watch Video]({r['Link']})")
 
-        # Download CSV
-        csv = df.to_csv(index=False).encode()
-        st.download_button(
-            "📥 Download Full List (CSV)",
-            data=csv,
-            file_name=f"faceless_viral_{datetime.now().strftime('%Y%m%d')}.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-    else:
-        st.warning("Kuch nahi mila bhai 😔 Keywords change karo ya days badhao.")
+        with col2:
+            st.image(r["Thumb"], use_container_width=True)
+
+    # CSV DOWNLOAD
+    csv = df.to_csv(index=False).encode()
+    st.download_button(
+        "📥 Download Full List (CSV)",
+        data=csv,
+        file_name=f"faceless_viral_{datetime.now().strftime('%Y%m%d')}.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
 
 st.caption("Made with ❤️ for Muhammed Rizwan Qamar | Clean 2025 Edition")
