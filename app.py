@@ -641,8 +641,6 @@ with st.sidebar.expander("🔍 Search", expanded=False):
 st.markdown("### 🔑 Keywords")
 
 default_keywords = """reddit stories
-aita
-am i the asshole
 reddit relationship advice
 true horror stories
 scary stories
