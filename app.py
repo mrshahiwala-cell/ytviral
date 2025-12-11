@@ -66,16 +66,23 @@ CPM_RATES = {
 
 
 # ------------------------------------------------------------
-# HTML REPORT GENERATOR - ENHANCED
+# HTML REPORT GENERATOR
 # ------------------------------------------------------------
-def generate_html_report(df, stats):
+def generate_html_report(df, stats, quota_exceeded=False):
     """Generate beautiful HTML report with clickable links"""
     
-    # Calculate summary stats
-    total_views = df['Views'].sum()
-    avg_virality = df['Virality'].mean()
-    monetized_count = len(df[df['MonetizationScore'] >= 70])
-    total_revenue = df['EstRevenue'].sum() if 'EstRevenue' in df.columns else 0
+    total_views = df['Views'].sum() if len(df) > 0 else 0
+    avg_virality = df['Virality'].mean() if len(df) > 0 else 0
+    monetized_count = len(df[df['MonetizationScore'] >= 70]) if len(df) > 0 else 0
+    total_revenue = df['EstRevenue'].sum() if 'EstRevenue' in df.columns and len(df) > 0 else 0
+    
+    quota_warning = ""
+    if quota_exceeded:
+        quota_warning = """
+        <div style="background: rgba(255, 193, 7, 0.2); border: 1px solid #ffc107; border-radius: 10px; padding: 15px; margin-bottom: 20px; text-align: center;">
+            <strong>⚠️ API Quota Exhausted!</strong> - Partial results shown below. Full quota resets at midnight Pacific Time.
+        </div>
+        """
     
     html = f"""
 <!DOCTYPE html>
@@ -86,12 +93,7 @@ def generate_html_report(df, stats):
     <title>Faceless Viral Hunter PRO Report - {datetime.now().strftime("%Y-%m-%d")}</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        * {{
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }}
-        
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         body {{
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
@@ -99,14 +101,7 @@ def generate_html_report(df, stats):
             color: #e4e4e4;
             line-height: 1.6;
         }}
-        
-        .container {{
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 20px;
-        }}
-        
-        /* Header */
+        .container {{ max-width: 1400px; margin: 0 auto; padding: 20px; }}
         .header {{
             text-align: center;
             padding: 40px 20px;
@@ -115,27 +110,14 @@ def generate_html_report(df, stats):
             margin-bottom: 30px;
             box-shadow: 0 10px 40px rgba(102, 126, 234, 0.3);
         }}
-        
-        .header h1 {{
-            font-size: 2.5rem;
-            font-weight: 700;
-            margin-bottom: 10px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
-        }}
-        
-        .header p {{
-            opacity: 0.9;
-            font-size: 1.1rem;
-        }}
-        
-        /* Summary Cards */
+        .header h1 {{ font-size: 2.5rem; font-weight: 700; margin-bottom: 10px; }}
+        .header p {{ opacity: 0.9; font-size: 1.1rem; }}
         .summary-grid {{
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 20px;
             margin-bottom: 40px;
         }}
-        
         .stat-card {{
             background: rgba(255,255,255,0.05);
             backdrop-filter: blur(10px);
@@ -145,12 +127,10 @@ def generate_html_report(df, stats):
             border: 1px solid rgba(255,255,255,0.1);
             transition: transform 0.3s, box-shadow 0.3s;
         }}
-        
         .stat-card:hover {{
             transform: translateY(-5px);
             box-shadow: 0 10px 30px rgba(0,0,0,0.3);
         }}
-        
         .stat-card .number {{
             font-size: 2rem;
             font-weight: 700;
@@ -159,14 +139,7 @@ def generate_html_report(df, stats):
             -webkit-text-fill-color: transparent;
             background-clip: text;
         }}
-        
-        .stat-card .label {{
-            font-size: 0.9rem;
-            color: #888;
-            margin-top: 5px;
-        }}
-        
-        /* Section Title */
+        .stat-card .label {{ font-size: 0.9rem; color: #888; margin-top: 5px; }}
         .section-title {{
             font-size: 1.8rem;
             font-weight: 600;
@@ -174,8 +147,6 @@ def generate_html_report(df, stats):
             padding-bottom: 10px;
             border-bottom: 2px solid rgba(102, 126, 234, 0.3);
         }}
-        
-        /* Video Cards */
         .video-card {{
             background: rgba(255,255,255,0.03);
             border-radius: 16px;
@@ -184,92 +155,28 @@ def generate_html_report(df, stats):
             border: 1px solid rgba(255,255,255,0.08);
             transition: all 0.3s ease;
         }}
-        
         .video-card:hover {{
             background: rgba(255,255,255,0.06);
             border-color: rgba(102, 126, 234, 0.3);
-            box-shadow: 0 5px 30px rgba(102, 126, 234, 0.1);
         }}
-        
-        .video-header {{
-            display: flex;
-            gap: 20px;
-            margin-bottom: 20px;
-        }}
-        
-        .thumbnail {{
-            width: 200px;
-            height: 112px;
-            border-radius: 12px;
-            object-fit: cover;
-            flex-shrink: 0;
-        }}
-        
-        .video-info {{
-            flex: 1;
-        }}
-        
-        .video-title {{
-            font-size: 1.2rem;
-            font-weight: 600;
-            margin-bottom: 10px;
-            color: #fff;
-        }}
-        
-        .video-title a {{
-            color: #fff;
-            text-decoration: none;
-        }}
-        
-        .video-title a:hover {{
-            color: #667eea;
-        }}
-        
-        .channel-name {{
-            display: inline-block;
-            color: #667eea;
-            text-decoration: none;
-            font-weight: 500;
-            margin-bottom: 8px;
-        }}
-        
-        .channel-name:hover {{
-            text-decoration: underline;
-        }}
-        
-        .video-meta {{
-            font-size: 0.9rem;
-            color: #888;
-        }}
-        
-        /* Stats Grid */
+        .video-header {{ display: flex; gap: 20px; margin-bottom: 20px; }}
+        .thumbnail {{ width: 200px; height: 112px; border-radius: 12px; object-fit: cover; flex-shrink: 0; }}
+        .video-info {{ flex: 1; }}
+        .video-title {{ font-size: 1.2rem; font-weight: 600; margin-bottom: 10px; color: #fff; }}
+        .video-title a {{ color: #fff; text-decoration: none; }}
+        .video-title a:hover {{ color: #667eea; }}
+        .channel-name {{ display: inline-block; color: #667eea; text-decoration: none; font-weight: 500; margin-bottom: 8px; }}
+        .channel-name:hover {{ text-decoration: underline; }}
+        .video-meta {{ font-size: 0.9rem; color: #888; }}
         .stats-grid {{
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
             gap: 15px;
             margin: 20px 0;
         }}
-        
-        .stat-item {{
-            background: rgba(255,255,255,0.05);
-            border-radius: 10px;
-            padding: 15px;
-            text-align: center;
-        }}
-        
-        .stat-value {{
-            font-size: 1.3rem;
-            font-weight: 600;
-            color: #fff;
-        }}
-        
-        .stat-label {{
-            font-size: 0.75rem;
-            color: #888;
-            margin-top: 5px;
-        }}
-        
-        /* Badges */
+        .stat-item {{ background: rgba(255,255,255,0.05); border-radius: 10px; padding: 15px; text-align: center; }}
+        .stat-value {{ font-size: 1.3rem; font-weight: 600; color: #fff; }}
+        .stat-label {{ font-size: 0.75rem; color: #888; margin-top: 5px; }}
         .badge {{
             display: inline-block;
             padding: 6px 12px;
@@ -279,45 +186,12 @@ def generate_html_report(df, stats):
             margin-right: 8px;
             margin-bottom: 8px;
         }}
-        
-        .badge-monetized {{
-            background: rgba(40, 167, 69, 0.2);
-            color: #28a745;
-            border: 1px solid rgba(40, 167, 69, 0.3);
-        }}
-        
-        .badge-possibly {{
-            background: rgba(255, 193, 7, 0.2);
-            color: #ffc107;
-            border: 1px solid rgba(255, 193, 7, 0.3);
-        }}
-        
-        .badge-not {{
-            background: rgba(220, 53, 69, 0.2);
-            color: #dc3545;
-            border: 1px solid rgba(220, 53, 69, 0.3);
-        }}
-        
-        .badge-faceless {{
-            background: rgba(102, 126, 234, 0.2);
-            color: #667eea;
-            border: 1px solid rgba(102, 126, 234, 0.3);
-        }}
-        
-        .badge-niche {{
-            background: rgba(23, 162, 184, 0.2);
-            color: #17a2b8;
-            border: 1px solid rgba(23, 162, 184, 0.3);
-        }}
-        
-        /* Links */
-        .action-links {{
-            margin-top: 15px;
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }}
-        
+        .badge-monetized {{ background: rgba(40, 167, 69, 0.2); color: #28a745; border: 1px solid rgba(40, 167, 69, 0.3); }}
+        .badge-possibly {{ background: rgba(255, 193, 7, 0.2); color: #ffc107; border: 1px solid rgba(255, 193, 7, 0.3); }}
+        .badge-not {{ background: rgba(220, 53, 69, 0.2); color: #dc3545; border: 1px solid rgba(220, 53, 69, 0.3); }}
+        .badge-faceless {{ background: rgba(102, 126, 234, 0.2); color: #667eea; border: 1px solid rgba(102, 126, 234, 0.3); }}
+        .badge-niche {{ background: rgba(23, 162, 184, 0.2); color: #17a2b8; border: 1px solid rgba(23, 162, 184, 0.3); }}
+        .action-links {{ margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap; }}
         .action-link {{
             display: inline-flex;
             align-items: center;
@@ -331,17 +205,8 @@ def generate_html_report(df, stats):
             font-weight: 500;
             transition: all 0.3s;
         }}
-        
-        .action-link:hover {{
-            transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
-        }}
-        
-        .action-link.secondary {{
-            background: rgba(255,255,255,0.1);
-        }}
-        
-        /* Details Section */
+        .action-link:hover {{ transform: translateY(-2px); box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4); }}
+        .action-link.secondary {{ background: rgba(255,255,255,0.1); }}
         .details-section {{
             margin-top: 15px;
             padding-top: 15px;
@@ -349,61 +214,27 @@ def generate_html_report(df, stats):
             font-size: 0.85rem;
             color: #999;
         }}
-        
-        /* Footer */
-        .footer {{
-            text-align: center;
-            padding: 30px;
-            margin-top: 40px;
-            color: #666;
-            font-size: 0.9rem;
-        }}
-        
-        /* Responsive */
+        .footer {{ text-align: center; padding: 30px; margin-top: 40px; color: #666; font-size: 0.9rem; }}
         @media (max-width: 768px) {{
-            .video-header {{
-                flex-direction: column;
-            }}
-            
-            .thumbnail {{
-                width: 100%;
-                height: auto;
-                aspect-ratio: 16/9;
-            }}
-            
-            .header h1 {{
-                font-size: 1.8rem;
-            }}
+            .video-header {{ flex-direction: column; }}
+            .thumbnail {{ width: 100%; height: auto; aspect-ratio: 16/9; }}
+            .header h1 {{ font-size: 1.8rem; }}
         }}
-        
-        /* Print Styles */
         @media print {{
-            body {{
-                background: white;
-                color: black;
-            }}
-            
-            .video-card {{
-                break-inside: avoid;
-                border: 1px solid #ddd;
-            }}
-            
-            .action-link {{
-                background: #667eea !important;
-                -webkit-print-color-adjust: exact;
-            }}
+            body {{ background: white; color: black; }}
+            .video-card {{ break-inside: avoid; border: 1px solid #ddd; }}
         }}
     </style>
 </head>
 <body>
     <div class="container">
-        <!-- Header -->
         <div class="header">
             <h1>🎯 Faceless Viral Hunter PRO</h1>
             <p>Report Generated: {datetime.now().strftime("%B %d, %Y at %I:%M %p")}</p>
         </div>
         
-        <!-- Summary Stats -->
+        {quota_warning}
+        
         <div class="summary-grid">
             <div class="stat-card">
                 <div class="number">{len(df)}</div>
@@ -427,13 +258,10 @@ def generate_html_report(df, stats):
             </div>
         </div>
         
-        <!-- Results -->
         <h2 class="section-title">🎬 Channel Results ({len(df)} found)</h2>
 """
     
-    # Add each video card
     for idx, row in df.iterrows():
-        # Determine monetization badge class
         if row['MonetizationScore'] >= 70:
             mon_class = "badge-monetized"
             mon_text = "🟢 Likely Monetized"
@@ -444,15 +272,9 @@ def generate_html_report(df, stats):
             mon_class = "badge-not"
             mon_text = "🔴 Not Monetized"
         
-        # Faceless badge
         faceless_text = "✅ Faceless" if row['Faceless'] == "YES" else "🤔 Maybe Faceless"
-        
-        # Get niche
         niche = row.get('Niche', 'Other')
-        
-        # Revenue
         est_revenue = row.get('EstRevenue', 0)
-        monthly_revenue = row.get('MonthlyRevenue', 0)
         
         html += f"""
         <div class="video-card">
@@ -462,73 +284,35 @@ def generate_html_report(df, stats):
                     <h3 class="video-title">
                         <a href="{row['Link']}" target="_blank">{row['Title']}</a>
                     </h3>
-                    <a href="{row['ChannelLink']}" target="_blank" class="channel-name">
-                        📺 {row['Channel']}
-                    </a>
+                    <a href="{row['ChannelLink']}" target="_blank" class="channel-name">📺 {row['Channel']}</a>
                     <div class="video-meta">
-                        🌍 {row['Country']} • 
-                        📅 Created: {row['ChCreated']} • 
-                        🎬 {row['TotalVideos']:,} videos
+                        🌍 {row['Country']} • 📅 Created: {row['ChCreated']} • 🎬 {row['TotalVideos']:,} videos
                     </div>
                 </div>
             </div>
-            
             <div class="stats-grid">
-                <div class="stat-item">
-                    <div class="stat-value">{row['Views']:,}</div>
-                    <div class="stat-label">👁️ Views</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-value">{row['Subs']:,}</div>
-                    <div class="stat-label">👥 Subscribers</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-value">{row['Virality']:,}/day</div>
-                    <div class="stat-label">🔥 Virality</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-value">{row['Engagement%']}%</div>
-                    <div class="stat-label">💬 Engagement</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-value">{row['UploadsPerWeek']:.1f}/wk</div>
-                    <div class="stat-label">📤 Uploads</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-value">${est_revenue:,.0f}</div>
-                    <div class="stat-label">💵 Est. Revenue</div>
-                </div>
+                <div class="stat-item"><div class="stat-value">{row['Views']:,}</div><div class="stat-label">👁️ Views</div></div>
+                <div class="stat-item"><div class="stat-value">{row['Subs']:,}</div><div class="stat-label">👥 Subscribers</div></div>
+                <div class="stat-item"><div class="stat-value">{row['Virality']:,}/day</div><div class="stat-label">🔥 Virality</div></div>
+                <div class="stat-item"><div class="stat-value">{row['Engagement%']}%</div><div class="stat-label">💬 Engagement</div></div>
+                <div class="stat-item"><div class="stat-value">{row['UploadsPerWeek']:.1f}/wk</div><div class="stat-label">📤 Uploads</div></div>
+                <div class="stat-item"><div class="stat-value">${est_revenue:,.0f}</div><div class="stat-label">💵 Est. Revenue</div></div>
             </div>
-            
             <div>
                 <span class="badge {mon_class}">{mon_text} ({row['MonetizationScore']}%)</span>
                 <span class="badge badge-faceless">{faceless_text} ({row['FacelessScore']}%)</span>
                 <span class="badge badge-niche">📂 {niche}</span>
             </div>
-            
             <div class="details-section">
-                ⏱️ Duration: {row['DurationStr']} ({row['Type']}) • 
-                👍 {row['Likes']:,} likes • 
-                💬 {row['Comments']:,} comments • 
-                📤 Uploaded: {row['Uploaded']} • 
-                🔑 Keyword: {row['Keyword']}
+                ⏱️ Duration: {row['DurationStr']} ({row['Type']}) • 👍 {row['Likes']:,} likes • 💬 {row['Comments']:,} comments • 📤 Uploaded: {row['Uploaded']} • 🔑 Keyword: {row['Keyword']}
             </div>
-            
             <div class="action-links">
-                <a href="{row['Link']}" target="_blank" class="action-link">
-                    ▶️ Watch Video
-                </a>
-                <a href="{row['ChannelLink']}" target="_blank" class="action-link secondary">
-                    📺 View Channel
-                </a>
-                <a href="https://www.youtube.com/{row['Channel'].replace(' ', '')}/videos" target="_blank" class="action-link secondary">
-                    🎬 All Videos
-                </a>
+                <a href="{row['Link']}" target="_blank" class="action-link">▶️ Watch Video</a>
+                <a href="{row['ChannelLink']}" target="_blank" class="action-link secondary">📺 View Channel</a>
             </div>
         </div>
 """
     
-    # Close HTML
     html += """
         <div class="footer">
             <p>🎯 Faceless Viral Hunter PRO Report</p>
@@ -538,7 +322,6 @@ def generate_html_report(df, stats):
 </body>
 </html>
 """
-    
     return html
 
 
@@ -750,9 +533,10 @@ def detect_niche(title, channel_name, keyword):
 
 
 def batch_fetch_channels(channel_ids, api_key, cache):
+    """Returns (cache, quota_exceeded)"""
     new_ids = [cid for cid in channel_ids if cid not in cache]
     if not new_ids:
-        return cache
+        return cache, False
     
     for i in range(0, len(new_ids), 50):
         batch = new_ids[i:i+50]
@@ -763,7 +547,7 @@ def batch_fetch_channels(channel_ids, api_key, cache):
         }
         data = fetch_json(CHANNELS_URL, params)
         if data == "QUOTA":
-            return "QUOTA"
+            return cache, True  # Return what we have + quota flag
         if not data:
             continue
         
@@ -785,10 +569,11 @@ def batch_fetch_channels(channel_ids, api_key, cache):
                 "banner": brand_img.get("bannerExternalUrl", ""),
                 "custom_url": sn.get("customUrl")
             }
-    return cache
+    return cache, False
 
 
 def search_videos_with_pagination(keyword, params, api_key, max_pages=2):
+    """Returns (items, quota_exceeded)"""
     all_items = []
     next_token = None
     
@@ -800,7 +585,7 @@ def search_videos_with_pagination(keyword, params, api_key, max_pages=2):
         
         data = fetch_json(SEARCH_URL, search_params)
         if data == "QUOTA":
-            return "QUOTA"
+            return all_items, True  # Return what we have + quota flag
         if not data:
             break
         
@@ -809,7 +594,7 @@ def search_videos_with_pagination(keyword, params, api_key, max_pages=2):
         if not next_token:
             break
     
-    return all_items
+    return all_items, False
 
 
 # ------------------------------------------------------------
@@ -906,6 +691,7 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
     all_results = []
     channel_cache = {}
     seen_videos = set()
+    quota_exceeded = False  # Track quota status
     
     published_after = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     
@@ -914,12 +700,23 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
     
     progress_bar = st.progress(0)
     status_text = st.empty()
+    quota_warning = st.empty()  # Placeholder for quota warning
     
-    stats = {"total_searched": 0, "final": 0}
+    stats = {"total_searched": 0, "final": 0, "keywords_completed": 0}
     
+    # Main search loop with quota handling
     for kw in keywords:
+        if quota_exceeded:
+            break
+            
         for order in search_orders:
+            if quota_exceeded:
+                break
+                
             for region in search_regions:
+                if quota_exceeded:
+                    break
+                    
                 current_op += 1
                 progress_bar.progress(current_op / total_ops)
                 status_text.markdown(f"🔍 `{kw}` | {order} | {region}")
@@ -931,14 +728,18 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                 }
                 
                 if use_pagination:
-                    items = search_videos_with_pagination(kw, search_params, API_KEY, 2)
+                    items, quota_hit = search_videos_with_pagination(kw, search_params, API_KEY, 2)
+                    if quota_hit:
+                        quota_exceeded = True
+                        quota_warning.warning("⚠️ API Quota khatam ho gaya! Jo results mil chuke hain wo show ho rahe hain...")
                 else:
                     data = fetch_json(SEARCH_URL, {**search_params, "key": API_KEY})
-                    items = data.get("items", []) if data and data != "QUOTA" else []
-                
-                if items == "QUOTA":
-                    st.error("❌ API Quota khatam!")
-                    st.stop()
+                    if data == "QUOTA":
+                        quota_exceeded = True
+                        quota_warning.warning("⚠️ API Quota khatam ho gaya! Jo results mil chuke hain wo show ho rahe hain...")
+                        items = []
+                    else:
+                        items = data.get("items", []) if data else []
                 
                 if not items:
                     continue
@@ -958,11 +759,14 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                 # Fetch video stats
                 video_stats = {}
                 for i in range(0, len(video_ids), 50):
+                    if quota_exceeded:
+                        break
                     batch = video_ids[i:i+50]
                     vid_data = fetch_json(VIDEOS_URL, {"part": "statistics,contentDetails", "id": ",".join(batch), "key": API_KEY})
                     if vid_data == "QUOTA":
-                        st.error("❌ API Quota!")
-                        st.stop()
+                        quota_exceeded = True
+                        quota_warning.warning("⚠️ API Quota khatam ho gaya! Jo results mil chuke hain wo show ho rahe hain...")
+                        break
                     if vid_data:
                         for v in vid_data.get("items", []):
                             s = v.get("statistics", {})
@@ -974,19 +778,23 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                             }
                 
                 # Fetch channel stats
-                result = batch_fetch_channels(channel_ids, API_KEY, channel_cache)
-                if result == "QUOTA":
-                    st.error("❌ API Quota!")
-                    st.stop()
-                channel_cache = result
+                if not quota_exceeded:
+                    channel_cache, quota_hit = batch_fetch_channels(channel_ids, API_KEY, channel_cache)
+                    if quota_hit:
+                        quota_exceeded = True
+                        quota_warning.warning("⚠️ API Quota khatam ho gaya! Jo results mil chuke hain wo show ho rahe hain...")
                 
-                # Process videos
+                # Process videos (even with partial data)
                 for item in new_items:
                     sn = item["snippet"]
                     vid = item["id"]["videoId"]
                     cid = sn["channelId"]
                     v_stats = video_stats.get(vid, {})
                     ch = channel_cache.get(cid, {})
+                    
+                    # Skip if no video stats (quota hit before we could fetch)
+                    if not v_stats:
+                        continue
                     
                     views = v_stats.get("views", 0)
                     likes = v_stats.get("likes", 0)
@@ -1079,29 +887,49 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                         "Link": f"https://www.youtube.com/watch?v={vid}",
                         "ChannelLink": f"https://www.youtube.com/channel/{cid}"
                     })
+        
+        stats["keywords_completed"] += 1
     
     progress_bar.empty()
     status_text.empty()
     
+    # Show quota warning if exceeded
+    if quota_exceeded:
+        st.warning(f"""
+        ⚠️ **API Quota Khatam Ho Gaya!**
+        
+        - ✅ Keywords completed: **{stats['keywords_completed']}/{len(keywords)}**
+        - ✅ Videos searched: **{stats['total_searched']}**
+        - ✅ Results found: **{stats['final']}**
+        
+        📌 Jo results mil chuke hain wo neeche show ho rahe hain. Quota midnight Pacific Time pe reset hota hai.
+        """)
+    
     # Stats
     st.markdown("### 📊 Statistics")
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     col1.metric("Total Searched", stats["total_searched"])
-    col2.metric("Final Results", stats["final"])
+    col2.metric("Keywords Done", f"{stats['keywords_completed']}/{len(keywords)}")
+    col3.metric("Results Found", stats["final"])
     
+    # Show results if any
     if not all_results:
-        st.warning("😔 Kuch nahi mila! Filters adjust karo.")
+        st.warning("😔 Koi result nahi mila! Filters adjust karo ya kal phir try karo.")
         st.stop()
     
     df = pd.DataFrame(all_results)
     df = df.sort_values("Views", ascending=False).drop_duplicates(subset="ChannelID", keep="first").reset_index(drop=True)
     
-    st.success(f"🎉 **{len(df)} FACELESS VIRAL VIDEOS** found!")
-    st.balloons()
+    if quota_exceeded:
+        st.success(f"🎉 **{len(df)} PARTIAL RESULTS** (Quota limit tak jo mile)")
+    else:
+        st.success(f"🎉 **{len(df)} FACELESS VIRAL VIDEOS** found!")
+        st.balloons()
     
-    # Store in session state for download
+    # Store in session state
     st.session_state['results_df'] = df
     st.session_state['stats'] = stats
+    st.session_state['quota_exceeded'] = quota_exceeded
     
     # Sorting
     col1, col2 = st.columns(2)
@@ -1154,6 +982,9 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
     st.markdown("---")
     st.markdown("### 📥 Download Results")
     
+    if quota_exceeded:
+        st.info("📌 Ye partial results hain - quota khatam hone se pehle jo mile.")
+    
     download_cols = st.columns(3)
     
     # CSV Download
@@ -1169,7 +1000,7 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
     
     # HTML Report Download
     with download_cols[1]:
-        html_report = generate_html_report(df, stats)
+        html_report = generate_html_report(df, stats, quota_exceeded)
         st.download_button(
             "📥 Download HTML Report",
             data=html_report,
