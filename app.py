@@ -612,7 +612,7 @@ with st.sidebar.expander("📊 View Filters", expanded=True):
     min_virality = st.slider("Min Virality (Views/Day)", 0, 10000, 500)
 
 with st.sidebar.expander("👥 Subscriber Filters", expanded=True):
-    min_subs = st.number_input("Min Subscribers", min_value=0, value=100)
+    min_subs = st.number_input("Min Subscribers", min_value=0, value=1000)
     max_subs = st.number_input("Max Subscribers", min_value=0, value=500000)
 
 with st.sidebar.expander("🎬 Video Type", expanded=True):
