@@ -316,7 +316,14 @@ def get_channel_upload_schedule(channel_id, api_key, limit=15):
 def estimate_monetization_status(channel_data, upload_schedule_data):
     """
     Estimate if a channel is likely monetized based on available signals
-    Returns: (status, confidence, score, reasons)
+    Returns: (status, confidence, reasons)
+    
+    Monetization requirements:
+    - 1,000+ subscribers
+    - 4,000+ watch hours in last 12 months (can't verify via API)
+    - 30+ days old channel
+    - No community guideline strikes
+    - AdSense account linked
     """
     reasons = []
     score = 0
@@ -351,8 +358,12 @@ def estimate_monetization_status(channel_data, upload_schedule_data):
         except:
             pass
     
-    # Check 3: Estimated watch hours
-    estimated_watch_hours = (total_views * 3) / 60
+    # Check 3: Estimated watch hours based on views
+    # Rough estimate: avg view duration ~3-4 min for faceless content
+    # 4000 hours = 240,000 minutes of watch time
+    # If avg 50% retention on 8 min video = 4 min watched
+    # Need ~60,000 views minimum for 4K hours
+    estimated_watch_hours = (total_views * 3) / 60  # Assuming 3 min avg
     
     if estimated_watch_hours >= 4000:
         score += 25
@@ -363,7 +374,7 @@ def estimate_monetization_status(channel_data, upload_schedule_data):
     else:
         reasons.append(f"✗ Est. {estimated_watch_hours:,.0f} watch hrs")
     
-    # Check 4: Content volume
+    # Check 4: Content volume (more videos = more likely monetized)
     if video_count >= 50:
         score += 10
         reasons.append(f"✓ {video_count} videos")
@@ -381,7 +392,7 @@ def estimate_monetization_status(channel_data, upload_schedule_data):
             score -= 10
             reasons.append(f"✗ {schedule_label}")
     
-    # Check 6: Premium country
+    # Check 6: Premium country (easier monetization)
     if country in PREMIUM_COUNTRIES:
         score += 5
         reasons.append(f"✓ Premium country: {country}")
@@ -844,16 +855,20 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                         "Type": vtype,
                         "Duration": duration,
                         "DurationStr": f"{duration//60}:{duration%60:02d}",
+                        # Upload Schedule Data
                         "UploadSchedule": schedule_label,
                         "UploadsPerWeek": upload_data.get("uploads_per_week", "N/A"),
                         "AvgDaysBetween": upload_data.get("avg_days_between", "N/A"),
                         "LastUpload": upload_data.get("last_upload", "N/A"),
+                        # Monetization Data
                         "Monetization": monetization_status,
                         "MonetizationScore": mon_score,
                         "MonetizationReasons": " | ".join(mon_reasons),
+                        # Faceless Data
                         "Faceless": "YES" if is_faceless else "MAYBE",
                         "FacelessScore": confidence,
                         "FacelessReasons": ", ".join(faceless_reasons) if faceless_reasons else "N/A",
+                        # Links
                         "Keyword": kw,
                         "Thumb": sn["thumbnails"]["high"]["url"],
                         "Link": f"https://www.youtube.com/watch?v={vid}",
@@ -954,9 +969,9 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                 
                 schedule_color = "🟢" if "Daily" in str(r['UploadSchedule']) else "🟡" if "week" in str(r['UploadSchedule']).lower() else "🔴"
                 col_s1.metric("Schedule", f"{schedule_color} {r['UploadSchedule']}")
-                col_s2.metric("Uploads/Week", r['UploadsPerWeek'] if r['UploadsPerWeek'] != "N/A" else "N/A")
-                col_s3.metric("Avg Days Between", f"{r['AvgDaysBetween']} days" if r['AvgDaysBetween'] != "N/A" else "N/A")
-                col_s4.metric("Last Upload", r['LastUpload'] if r['LastUpload'] != "N/A" else "N/A")
+                col_s2.metric("Uploads/Week", r['UploadsPerWeek'] if r['UploadsPerWeek'] else "N/A")
+                col_s3.metric("Avg Days Between", f"{r['AvgDaysBetween']} days" if r['AvgDaysBetween'] else "N/A")
+                col_s4.metric("Last Upload", r['LastUpload'] if r['LastUpload'] else "N/A")
                 
                 # Monetization Section
                 st.markdown("#### 💰 Monetization Status")
