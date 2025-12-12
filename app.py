@@ -749,6 +749,7 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
     all_results = []
     channel_cache = {}
     seen_videos = set()
+    seen_channels = set()  # Track channels to avoid duplicates
     quota_exceeded = False  # Track quota status
     
     published_after = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -760,7 +761,7 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
     status_text = st.empty()
     quota_warning = st.empty()  # Placeholder for quota warning
     
-    stats = {"total_searched": 0, "final": 0, "keywords_completed": 0}
+    stats = {"total_searched": 0, "final": 0, "keywords_completed": 0, "duplicates_skipped": 0}
     
     # Main search loop with quota handling
     for kw in keywords:
@@ -804,9 +805,26 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                 
                 stats["total_searched"] += len(items)
                 
-                new_items = [item for item in items if item.get("id", {}).get("videoId") and item["id"]["videoId"] not in seen_videos]
-                for item in new_items:
-                    seen_videos.add(item["id"]["videoId"])
+                # Filter out duplicate videos AND duplicate channels
+                new_items = []
+                for item in items:
+                    vid = item.get("id", {}).get("videoId")
+                    cid = item.get("snippet", {}).get("channelId")
+                    
+                    if not vid or not cid:
+                        continue
+                    
+                    # Skip if video already seen
+                    if vid in seen_videos:
+                        continue
+                    
+                    # Skip if channel already seen (only 1 video per channel)
+                    if cid in seen_channels:
+                        stats["duplicates_skipped"] += 1
+                        continue
+                    
+                    seen_videos.add(vid)
+                    new_items.append(item)
                 
                 if not new_items:
                     continue
@@ -847,6 +865,11 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                     sn = item["snippet"]
                     vid = item["id"]["videoId"]
                     cid = sn["channelId"]
+                    
+                    # Skip if channel already added (double check)
+                    if cid in seen_channels:
+                        continue
+                    
                     v_stats = video_stats.get(vid, {})
                     ch = channel_cache.get(cid, {})
                     
@@ -913,6 +936,8 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                     est_revenue, monthly_revenue = estimate_revenue(total_channel_views, country, total_videos)
                     niche = detect_niche(sn["title"], sn["channelTitle"], kw)
                     
+                    # Mark channel as seen AFTER all filters pass
+                    seen_channels.add(cid)
                     stats["final"] += 1
                     
                     all_results.append({
@@ -965,6 +990,7 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
         - ✅ Keywords completed: **{stats['keywords_completed']}/{len(keywords)}**
         - ✅ Videos searched: **{stats['total_searched']}**
         - ✅ Results found: **{stats['final']}**
+        - 🔄 Duplicates skipped: **{stats['duplicates_skipped']}**
         - 📊 Quota Used: **{st.session_state['quota_used']}/{DAILY_QUOTA_LIMIT}**
         
         📌 Jo results mil chuke hain wo neeche show ho rahe hain. Quota midnight Pacific Time pe reset hota hai.
@@ -972,11 +998,12 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
     
     # Stats
     st.markdown("### 📊 Statistics")
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("Total Searched", stats["total_searched"])
     col2.metric("Keywords Done", f"{stats['keywords_completed']}/{len(keywords)}")
-    col3.metric("Results Found", stats["final"])
-    col4.metric("Quota Used", f"{st.session_state['quota_used']:,}")
+    col3.metric("Unique Channels", stats["final"])
+    col4.metric("Duplicates Skipped", stats["duplicates_skipped"])
+    col5.metric("Quota Used", f"{st.session_state['quota_used']:,}")
     
     # Show results if any
     if not all_results:
@@ -984,12 +1011,12 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
         st.stop()
     
     df = pd.DataFrame(all_results)
-    df = df.sort_values("Views", ascending=False).drop_duplicates(subset="ChannelID", keep="first").reset_index(drop=True)
+    df = df.sort_values("Views", ascending=False).reset_index(drop=True)
     
     if quota_exceeded:
-        st.success(f"🎉 **{len(df)} PARTIAL RESULTS** (Quota limit tak jo mile)")
+        st.success(f"🎉 **{len(df)} UNIQUE CHANNELS** (No duplicates - Quota limit tak jo mile)")
     else:
-        st.success(f"🎉 **{len(df)} FACELESS VIRAL VIDEOS** found!")
+        st.success(f"🎉 **{len(df)} UNIQUE FACELESS CHANNELS** found! (1 video per channel)")
         st.balloons()
     
     # Store in session state
