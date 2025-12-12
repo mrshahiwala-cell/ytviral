@@ -191,6 +191,8 @@ def generate_html_report(df, stats, quota_exceeded=False):
         .badge-not {{ background: rgba(220, 53, 69, 0.2); color: #dc3545; border: 1px solid rgba(220, 53, 69, 0.3); }}
         .badge-faceless {{ background: rgba(102, 126, 234, 0.2); color: #667eea; border: 1px solid rgba(102, 126, 234, 0.3); }}
         .badge-niche {{ background: rgba(23, 162, 184, 0.2); color: #17a2b8; border: 1px solid rgba(23, 162, 184, 0.3); }}
+        .badge-shorts {{ background: rgba(255, 0, 80, 0.2); color: #ff0050; border: 1px solid rgba(255, 0, 80, 0.3); }}
+        .badge-long {{ background: rgba(0, 150, 136, 0.2); color: #009688; border: 1px solid rgba(0, 150, 136, 0.3); }}
         .action-links {{ margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap; }}
         .action-link {{
             display: inline-flex;
@@ -275,6 +277,8 @@ def generate_html_report(df, stats, quota_exceeded=False):
         faceless_text = "✅ Faceless" if row['Faceless'] == "YES" else "🤔 Maybe Faceless"
         niche = row.get('Niche', 'Other')
         est_revenue = row.get('EstRevenue', 0)
+        shorts_count = row.get('ShortsCount', 'N/A')
+        long_count = row.get('LongCount', 'N/A')
         
         html += f"""
         <div class="video-card">
@@ -287,6 +291,10 @@ def generate_html_report(df, stats, quota_exceeded=False):
                     <a href="{row['ChannelLink']}" target="_blank" class="channel-name">📺 {row['Channel']}</a>
                     <div class="video-meta">
                         🌍 {row['Country']} • 📅 Created: {row['ChCreated']} • 🎬 {row['TotalVideos']:,} videos
+                    </div>
+                    <div class="video-meta" style="margin-top: 5px;">
+                        <span class="badge badge-shorts">🎬 Shorts: {shorts_count}</span>
+                        <span class="badge badge-long">🎥 Long: {long_count}</span>
                     </div>
                 </div>
             </div>
@@ -547,7 +555,7 @@ def batch_fetch_channels(channel_ids, api_key, cache):
         }
         data = fetch_json(CHANNELS_URL, params)
         if data == "QUOTA":
-            return cache, True  # Return what we have + quota flag
+            return cache, True
         if not data:
             continue
         
@@ -572,6 +580,60 @@ def batch_fetch_channels(channel_ids, api_key, cache):
     return cache, False
 
 
+# ------------------------------------------------------------
+# 🆕 NEW: FETCH CHANNEL VIDEOS TO COUNT SHORTS VS LONG
+# ------------------------------------------------------------
+def fetch_channel_video_counts(channel_id, api_key):
+    """Fetch recent videos from channel and count shorts vs long"""
+    try:
+        # Get channel's recent videos (up to 50)
+        search_params = {
+            "part": "id",
+            "channelId": channel_id,
+            "type": "video",
+            "maxResults": 50,
+            "order": "date",
+            "key": api_key
+        }
+        
+        data = fetch_json(SEARCH_URL, search_params)
+        if data == "QUOTA" or not data:
+            return None, None, True if data == "QUOTA" else False
+        
+        video_ids = [item["id"]["videoId"] for item in data.get("items", []) if item.get("id", {}).get("videoId")]
+        
+        if not video_ids:
+            return 0, 0, False
+        
+        # Get video durations
+        vid_params = {
+            "part": "contentDetails",
+            "id": ",".join(video_ids),
+            "key": api_key
+        }
+        
+        vid_data = fetch_json(VIDEOS_URL, vid_params)
+        if vid_data == "QUOTA":
+            return None, None, True
+        if not vid_data:
+            return 0, 0, False
+        
+        shorts_count = 0
+        long_count = 0
+        
+        for v in vid_data.get("items", []):
+            duration = parse_duration(v["contentDetails"].get("duration", ""))
+            if duration < 60:
+                shorts_count += 1
+            elif duration >= 60:
+                long_count += 1
+        
+        return shorts_count, long_count, False
+        
+    except Exception as e:
+        return 0, 0, False
+
+
 def search_videos_with_pagination(keyword, params, api_key, max_pages=2):
     """Returns (items, quota_exceeded)"""
     all_items = []
@@ -585,7 +647,7 @@ def search_videos_with_pagination(keyword, params, api_key, max_pages=2):
         
         data = fetch_json(SEARCH_URL, search_params)
         if data == "QUOTA":
-            return all_items, True  # Return what we have + quota flag
+            return all_items, True
         if not data:
             break
         
@@ -602,10 +664,7 @@ def search_videos_with_pagination(keyword, params, api_key, max_pages=2):
 # ------------------------------------------------------------
 st.sidebar.header("⚙️ Settings")
 
-# ============================================================
-# 🆕 NEW: KEYWORD LIMIT WARNING
-# ============================================================
-st.sidebar.info("⚡ **API Quota Saving Mode**: Maximum 5 keywords allowed to save daily quota!")
+st.sidebar.info("⚡ **API Quota Saving Mode**: Maximum 5 keywords allowed!")
 
 with st.sidebar.expander("📅 Time Filters", expanded=True):
     days = st.slider("Videos from last X days", 1, 90, 14)
@@ -620,18 +679,12 @@ with st.sidebar.expander("👥 Subscriber Filters", expanded=True):
     min_subs = st.number_input("Min Subscribers", min_value=0, value=100)
     max_subs = st.number_input("Max Subscribers", min_value=0, value=500000)
 
-# ============================================================
-# 🆕 NEW: CHANNEL VIDEO COUNT FILTER (0-300)
-# ============================================================
 with st.sidebar.expander("🎬 Channel Video Count Filter", expanded=True):
     st.markdown("**Filter channels by total videos uploaded:**")
     min_channel_videos = st.number_input("Min Videos on Channel", min_value=0, value=0, step=10)
     max_channel_videos = st.number_input("Max Videos on Channel", min_value=0, value=300, step=10)
     st.caption("💡 0-300 range helps find newer channels")
 
-# ============================================================
-# 🆕 NEW: SHORTS vs LONG VIDEO FILTER
-# ============================================================
 with st.sidebar.expander("📹 Video Type Filter", expanded=True):
     st.markdown("**Filter by Shorts vs Long videos:**")
     video_type = st.selectbox(
@@ -639,12 +692,6 @@ with st.sidebar.expander("📹 Video Type Filter", expanded=True):
         ["All", "Long Only (5min+)", "Medium (1-5min)", "Shorts Only (<1min)", "Long + Medium (No Shorts)"],
         help="Shorts = under 60 seconds, Long = 5+ minutes"
     )
-    
-    # Additional shorts/long specific filters
-    if video_type in ["All", "Long + Medium (No Shorts)"]:
-        include_shorts = st.checkbox("Include Shorts in results", value=True if video_type == "All" else False)
-    else:
-        include_shorts = video_type == "Shorts Only (<1min)"
 
 with st.sidebar.expander("🎯 Faceless Detection", expanded=True):
     faceless_only = st.checkbox("Only Faceless Channels", value=True)
@@ -661,18 +708,14 @@ with st.sidebar.expander("🌍 Region", expanded=False):
 with st.sidebar.expander("🔍 Search Settings", expanded=False):
     search_orders = st.multiselect("Search Order", ["viewCount", "relevance", "date", "rating"], default=["viewCount"])
     use_pagination = st.checkbox("Use Pagination (uses more quota)", value=False)
+    fetch_shorts_long_count = st.checkbox("Fetch Shorts/Long counts per channel", value=True, help="Shows exact shorts vs long count for each channel (uses extra API quota)")
     st.caption("💡 Pagination OFF = saves quota")
 
 
 # ------------------------------------------------------------
 # KEYWORDS
 # ------------------------------------------------------------
-st.markdown("### 🔑 Keywords")
-
-# ============================================================
-# 🆕 NEW: WARNING ABOUT 5 KEYWORD LIMIT
-# ============================================================
-st.warning("⚠️ **Maximum 5 Keywords Allowed** - API quota bachane ke liye sirf 5 keywords use honge!")
+st.markdown("### 🔑 Keywords (Max 5)")
 
 default_keywords = """reddit stories
 aita
@@ -682,7 +725,7 @@ top 10 facts"""
 
 keyword_input = st.text_area("Enter Keywords (One per line, MAX 5)", height=150, value=default_keywords)
 
-# Quick templates (limited to 5 keywords each)
+# Quick templates
 col1, col2, col3, col4 = st.columns(4)
 with col1:
     if st.button("📖 Reddit"):
@@ -707,23 +750,21 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
         st.error("⚠️ Keywords daal do!")
         st.stop()
     
-    # ============================================================
-    # 🆕 NEW: LIMIT TO 5 KEYWORDS
-    # ============================================================
+    # Limit to 5 keywords
     all_keywords = list(dict.fromkeys([kw.strip() for line in keyword_input.splitlines() for kw in line.split(",") if kw.strip()]))
     
     if len(all_keywords) > 5:
-        st.warning(f"⚠️ {len(all_keywords)} keywords diye hain, sirf pehle 5 use honge quota bachane ke liye!")
         keywords = all_keywords[:5]
+        st.info(f"🔍 Using first 5 keywords: {', '.join(keywords)}")
     else:
         keywords = all_keywords
-    
-    st.info(f"🔍 Using {len(keywords)} keywords: {', '.join(keywords)}")
+        st.info(f"🔍 Using {len(keywords)} keywords: {', '.join(keywords)}")
     
     all_results = []
     channel_cache = {}
+    channel_shorts_long_cache = {}  # Cache for shorts/long counts
     seen_videos = set()
-    quota_exceeded = False  # Track quota status
+    quota_exceeded = False
     
     published_after = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     
@@ -732,11 +773,11 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
     
     progress_bar = st.progress(0)
     status_text = st.empty()
-    quota_warning = st.empty()  # Placeholder for quota warning
+    quota_warning = st.empty()
     
     stats = {"total_searched": 0, "final": 0, "keywords_completed": 0, "filtered_by_video_count": 0, "filtered_by_type": 0}
     
-    # Main search loop with quota handling
+    # Main search loop
     for kw in keywords:
         if quota_exceeded:
             break
@@ -763,12 +804,12 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                     items, quota_hit = search_videos_with_pagination(kw, search_params, API_KEY, 2)
                     if quota_hit:
                         quota_exceeded = True
-                        quota_warning.warning("⚠️ API Quota khatam ho gaya! Jo results mil chuke hain wo show ho rahe hain...")
+                        quota_warning.warning("⚠️ API Quota khatam ho gaya!")
                 else:
                     data = fetch_json(SEARCH_URL, {**search_params, "key": API_KEY})
                     if data == "QUOTA":
                         quota_exceeded = True
-                        quota_warning.warning("⚠️ API Quota khatam ho gaya! Jo results mil chuke hain wo show ho rahe hain...")
+                        quota_warning.warning("⚠️ API Quota khatam ho gaya!")
                         items = []
                     else:
                         items = data.get("items", []) if data else []
@@ -797,7 +838,7 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                     vid_data = fetch_json(VIDEOS_URL, {"part": "statistics,contentDetails", "id": ",".join(batch), "key": API_KEY})
                     if vid_data == "QUOTA":
                         quota_exceeded = True
-                        quota_warning.warning("⚠️ API Quota khatam ho gaya! Jo results mil chuke hain wo show ho rahe hain...")
+                        quota_warning.warning("⚠️ API Quota khatam ho gaya!")
                         break
                     if vid_data:
                         for v in vid_data.get("items", []):
@@ -814,9 +855,9 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                     channel_cache, quota_hit = batch_fetch_channels(channel_ids, API_KEY, channel_cache)
                     if quota_hit:
                         quota_exceeded = True
-                        quota_warning.warning("⚠️ API Quota khatam ho gaya! Jo results mil chuke hain wo show ho rahe hain...")
+                        quota_warning.warning("⚠️ API Quota khatam ho gaya!")
                 
-                # Process videos (even with partial data)
+                # Process videos
                 for item in new_items:
                     sn = item["snippet"]
                     vid = item["id"]["videoId"]
@@ -824,7 +865,6 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                     v_stats = video_stats.get(vid, {})
                     ch = channel_cache.get(cid, {})
                     
-                    # Skip if no video stats (quota hit before we could fetch)
                     if not v_stats:
                         continue
                     
@@ -842,9 +882,7 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                     if not (min_subs <= subs <= max_subs):
                         continue
                     
-                    # ============================================================
-                    # 🆕 NEW: CHANNEL VIDEO COUNT FILTER (0-300)
-                    # ============================================================
+                    # Channel video count filter
                     if max_channel_videos > 0:
                         if total_videos < min_channel_videos or total_videos > max_channel_videos:
                             stats["filtered_by_video_count"] += 1
@@ -869,9 +907,7 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                     if premium_only and country not in PREMIUM_COUNTRIES:
                         continue
                     
-                    # ============================================================
-                    # 🆕 NEW: IMPROVED VIDEO TYPE FILTER (SHORTS vs LONG)
-                    # ============================================================
+                    # Video type filter
                     vtype = get_video_type_label(duration)
                     
                     if video_type == "Long Only (5min+)" and duration < 300:
@@ -899,6 +935,24 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                     if monetized_only and monetization_score < 50:
                         continue
                     
+                    # 🆕 Fetch shorts/long counts for this channel (if enabled and not already cached)
+                    shorts_count = "N/A"
+                    long_count = "N/A"
+                    
+                    if fetch_shorts_long_count and not quota_exceeded:
+                        if cid in channel_shorts_long_cache:
+                            shorts_count, long_count = channel_shorts_long_cache[cid]
+                        else:
+                            status_text.markdown(f"📊 Fetching video breakdown for `{sn['channelTitle'][:30]}...`")
+                            s_count, l_count, quota_hit = fetch_channel_video_counts(cid, API_KEY)
+                            if quota_hit:
+                                quota_exceeded = True
+                                quota_warning.warning("⚠️ API Quota khatam ho gaya!")
+                            elif s_count is not None:
+                                shorts_count = s_count
+                                long_count = l_count
+                                channel_shorts_long_cache[cid] = (shorts_count, long_count)
+                    
                     est_revenue, monthly_revenue = estimate_revenue(total_channel_views, country, total_videos)
                     niche = detect_niche(sn["title"], sn["channelTitle"], kw)
                     
@@ -910,6 +964,8 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                         "ChannelID": cid,
                         "Subs": subs,
                         "TotalVideos": total_videos,
+                        "ShortsCount": shorts_count,
+                        "LongCount": long_count,
                         "TotalChannelViews": total_channel_views,
                         "UploadsPerWeek": uploads_per_week,
                         "UploadsPerMonth": uploads_per_month,
@@ -955,7 +1011,7 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
         - ✅ Videos searched: **{stats['total_searched']}**
         - ✅ Results found: **{stats['final']}**
         
-        📌 Jo results mil chuke hain wo neeche show ho rahe hain. Quota midnight Pacific Time pe reset hota hai.
+        📌 Quota midnight Pacific Time pe reset hota hai.
         """)
     
     # Stats
@@ -966,7 +1022,6 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
     col3.metric("Results Found", stats["final"])
     col4.metric("Filtered (Video Count)", stats["filtered_by_video_count"])
     
-    # Additional filter stats
     if stats["filtered_by_type"] > 0:
         st.caption(f"📹 {stats['filtered_by_type']} videos filtered by type (Shorts/Long)")
     
@@ -989,10 +1044,8 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
     st.session_state['stats'] = stats
     st.session_state['quota_exceeded'] = quota_exceeded
     
-    # ============================================================
-    # 🆕 NEW: VIDEO TYPE SUMMARY
-    # ============================================================
-    st.markdown("### 📹 Video Type Breakdown")
+    # Video Type Summary
+    st.markdown("### 📹 Video Type Breakdown (Current Video)")
     type_counts = df['Type'].value_counts()
     type_cols = st.columns(3)
     with type_cols[0]:
@@ -1023,7 +1076,11 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
             with col1:
                 st.markdown(f"### {r['Title']}")
                 st.markdown(f"**📺 [{r['Channel']}]({r['ChannelLink']})** • 👥 {r['Subs']:,} • 🎬 {r['TotalVideos']} videos • 🌍 {r['Country']} • 📂 {r['Niche']}")
-                st.markdown(f"📅 Created: {r['ChCreated']} • ⏰ {r['UploadSchedule']}")
+                
+                # 🆕 SHORTS & LONG COUNT DISPLAY
+                shorts_display = r['ShortsCount'] if r['ShortsCount'] != "N/A" else "?"
+                long_display = r['LongCount'] if r['LongCount'] != "N/A" else "?"
+                st.markdown(f"📅 Created: {r['ChCreated']} • ⏰ {r['UploadSchedule']} • 🎬 **Shorts: {shorts_display}** | 🎥 **Long: {long_display}**")
                 
                 if "LIKELY" in r['MonetizationStatus']:
                     st.success(f"💰 {r['MonetizationStatus']} ({r['MonetizationScore']}%) | Est: ${r['EstRevenue']:,.0f}")
@@ -1038,9 +1095,6 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                 col_c.metric("💬 Engagement", f"{r['Engagement%']}%")
                 col_d.metric("📈 Sub:View", f"{r['SubViewRatio']}x")
                 
-                # ============================================================
-                # 🆕 NEW: SHOW VIDEO TYPE BADGE MORE PROMINENTLY
-                # ============================================================
                 type_emoji = "🎬" if r['Type'] == "Shorts" else "📺" if r['Type'] == "Medium" else "🎥"
                 st.markdown(f"⏱️ {r['DurationStr']} **{type_emoji} {r['Type']}** • 👍 {r['Likes']:,} • 💬 {r['Comments']:,} • 📤 {r['Uploaded']}")
                 
@@ -1054,9 +1108,7 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
             with col2:
                 st.image(r["Thumb"], use_container_width=True)
     
-    # ------------------------------------------------------------
-    # DOWNLOAD SECTION
-    # ------------------------------------------------------------
+    # Download Section
     st.markdown("---")
     st.markdown("### 📥 Download Results")
     
@@ -1065,7 +1117,6 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
     
     download_cols = st.columns(3)
     
-    # CSV Download
     with download_cols[0]:
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button(
@@ -1076,7 +1127,6 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
             use_container_width=True
         )
     
-    # HTML Report Download
     with download_cols[1]:
         html_report = generate_html_report(df, stats, quota_exceeded)
         st.download_button(
@@ -1087,7 +1137,6 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
             use_container_width=True
         )
     
-    # JSON Download
     with download_cols[2]:
         json_data = df.to_json(orient='records', indent=2)
         st.download_button(
@@ -1100,7 +1149,7 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
     
     # Table View
     with st.expander("📋 View Table"):
-        st.dataframe(df[["Title", "Channel", "Views", "Virality", "Subs", "TotalVideos", "Type", "MonetizationScore", "Niche", "Country", "Faceless"]], use_container_width=True, height=400)
+        st.dataframe(df[["Title", "Channel", "Views", "Virality", "Subs", "TotalVideos", "ShortsCount", "LongCount", "Type", "MonetizationScore", "Niche", "Country", "Faceless"]], use_container_width=True, height=400)
 
 # Footer
 st.markdown("---")
