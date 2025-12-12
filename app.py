@@ -21,6 +21,27 @@ VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
 CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels"
 
 # ------------------------------------------------------------
+# API QUOTA TRACKING
+# ------------------------------------------------------------
+if 'api_calls' not in st.session_state:
+    st.session_state['api_calls'] = 0
+if 'quota_used' not in st.session_state:
+    st.session_state['quota_used'] = 0
+
+# YouTube API Quota Costs
+QUOTA_COSTS = {
+    'search': 100,
+    'videos': 1,
+    'channels': 1
+}
+DAILY_QUOTA_LIMIT = 10000  # YouTube default daily quota
+
+# ------------------------------------------------------------
+# TOP 10 PREMIUM CPM COUNTRIES (Fixed)
+# ------------------------------------------------------------
+TOP_10_PREMIUM_COUNTRIES = ['US', 'AU', 'NO', 'CH', 'CA', 'GB', 'DE', 'LU', 'SE', 'NL']
+
+# ------------------------------------------------------------
 # FACELESS DETECTION KEYWORDS
 # ------------------------------------------------------------
 FACELESS_INDICATORS = [
@@ -328,11 +349,15 @@ def generate_html_report(df, stats, quota_exceeded=False):
 # ------------------------------------------------------------
 # HELPER FUNCTIONS
 # ------------------------------------------------------------
-def fetch_json(url, params, retries=2):
+def fetch_json(url, params, retries=2, api_type='search'):
+    """Fetch JSON with quota tracking"""
     for attempt in range(retries):
         try:
             resp = requests.get(url, params=params, timeout=30)
             if resp.status_code == 200:
+                # Track API quota usage
+                st.session_state['api_calls'] += 1
+                st.session_state['quota_used'] += QUOTA_COSTS.get(api_type, 1)
                 return resp.json()
             if "quotaExceeded" in resp.text or resp.status_code == 403:
                 return "QUOTA"
@@ -545,7 +570,7 @@ def batch_fetch_channels(channel_ids, api_key, cache):
             "id": ",".join(batch),
             "key": api_key
         }
-        data = fetch_json(CHANNELS_URL, params)
+        data = fetch_json(CHANNELS_URL, params, api_type='channels')
         if data == "QUOTA":
             return cache, True  # Return what we have + quota flag
         if not data:
@@ -583,7 +608,7 @@ def search_videos_with_pagination(keyword, params, api_key, max_pages=2):
         if next_token:
             search_params["pageToken"] = next_token
         
-        data = fetch_json(SEARCH_URL, search_params)
+        data = fetch_json(SEARCH_URL, search_params, api_type='search')
         if data == "QUOTA":
             return all_items, True  # Return what we have + quota flag
         if not data:
@@ -602,6 +627,34 @@ def search_videos_with_pagination(keyword, params, api_key, max_pages=2):
 # ------------------------------------------------------------
 st.sidebar.header("⚙️ Settings")
 
+# API Quota Display
+st.sidebar.markdown("### 📊 API Quota Usage")
+quota_percentage = (st.session_state['quota_used'] / DAILY_QUOTA_LIMIT) * 100
+quota_remaining = DAILY_QUOTA_LIMIT - st.session_state['quota_used']
+
+# Color coding based on usage
+if quota_percentage < 50:
+    quota_color = "🟢"
+elif quota_percentage < 80:
+    quota_color = "🟡"
+else:
+    quota_color = "🔴"
+
+st.sidebar.markdown(f"""
+{quota_color} **Used:** {st.session_state['quota_used']:,} / {DAILY_QUOTA_LIMIT:,} ({quota_percentage:.1f}%)
+
+📈 **Remaining:** {quota_remaining:,} units
+
+🔄 **API Calls:** {st.session_state['api_calls']}
+""")
+
+st.sidebar.progress(min(quota_percentage / 100, 1.0))
+
+if quota_percentage >= 80:
+    st.sidebar.warning("⚠️ Quota almost exhausted!")
+    
+st.sidebar.markdown("---")
+
 with st.sidebar.expander("📅 Time Filters", expanded=True):
     days = st.slider("Videos from last X days", 1, 90, 14)
     channel_age = st.selectbox("Channel Created After", ["2025", "2024", "2023", "2022", "Any"], index=1)
@@ -615,6 +668,13 @@ with st.sidebar.expander("👥 Subscriber Filters", expanded=True):
     min_subs = st.number_input("Min Subscribers", min_value=0, value=100)
     max_subs = st.number_input("Max Subscribers", min_value=0, value=500000)
 
+with st.sidebar.expander("🎬 Channel Video Count", expanded=True):
+    st.markdown("**Filter by total videos on channel:**")
+    min_channel_videos = st.number_input("Min Videos on Channel", min_value=0, max_value=500, value=0, step=10)
+    max_channel_videos = st.number_input("Max Videos on Channel", min_value=0, max_value=500, value=100, step=10)
+    if max_channel_videos == 0:
+        st.info("ℹ️ Max 0 = No limit")
+
 with st.sidebar.expander("🎬 Video Type", expanded=True):
     video_type = st.selectbox("Video Duration", ["All", "Long (5min+)", "Medium (1-5min)", "Shorts (<1min)"])
 
@@ -626,9 +686,12 @@ with st.sidebar.expander("💰 Monetization", expanded=False):
     monetized_only = st.checkbox("Only Likely Monetized", value=False)
     min_upload_frequency = st.slider("Min Uploads/Week", 0, 14, 0)
 
-with st.sidebar.expander("🌍 Region", expanded=False):
+with st.sidebar.expander("🌍 Region (Top 10 Premium CPM)", expanded=False):
     premium_only = st.checkbox("Only Premium CPM Countries", value=False)
-    search_regions = st.multiselect("Search Regions", ["US", "GB", "CA", "AU", "IN", "PH"], default=["US"])
+    st.markdown("**🏆 Top 10 Premium CPM Countries (Fixed):**")
+    st.markdown("US, AU, NO, CH, CA, GB, DE, LU, SE, NL")
+    # Fixed search regions - Top 10 Premium Countries
+    search_regions = TOP_10_PREMIUM_COUNTRIES
 
 with st.sidebar.expander("🔍 Search", expanded=False):
     search_orders = st.multiselect("Search Order", ["viewCount", "relevance", "date", "rating"], default=["viewCount", "relevance"])
@@ -636,43 +699,33 @@ with st.sidebar.expander("🔍 Search", expanded=False):
 
 
 # ------------------------------------------------------------
-# KEYWORDS
+# KEYWORDS (Limited to 5)
 # ------------------------------------------------------------
-st.markdown("### 🔑 Keywords")
+st.markdown("### 🔑 Keywords (Maximum 5)")
 
 default_keywords = """reddit stories
-reddit relationship advice
 true horror stories
-scary stories
-mr nightmare type
-creepypasta
-pro revenge reddit
-nuclear revenge
-malicious compliance
 motivation
-stoicism
-stoic quotes
-self improvement
 top 10 facts
-true crime
-unsolved mysteries"""
+true crime"""
 
-keyword_input = st.text_area("Enter Keywords (One per line)", height=200, value=default_keywords)
+keyword_input = st.text_area("Enter Keywords (One per line, Max 5)", height=150, value=default_keywords)
 
-# Quick templates
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    if st.button("📖 Reddit"):
-        keyword_input = "reddit stories\naita\nam i the asshole\npro revenge\nnuclear revenge\nmalicious compliance"
-with col2:
-    if st.button("👻 Horror"):
-        keyword_input = "true horror stories\nscary stories\ncreepypasta\nmr nightmare\nparanormal"
-with col3:
-    if st.button("💪 Motivation"):
-        keyword_input = "stoicism\nmotivation\nself improvement\nmarcus aurelius\nsigma mindset"
-with col4:
-    if st.button("📺 Cash Cow"):
-        keyword_input = "top 10\nfacts about\nexplained\ndocumentary\ntrue crime"
+# Show keyword count
+keywords_list = [kw.strip() for line in keyword_input.splitlines() for kw in line.split(",") if kw.strip()]
+keywords_count = len(keywords_list)
+
+if keywords_count > 5:
+    st.error(f"⚠️ Maximum 5 keywords allowed! You have {keywords_count}. Pehle 5 keywords use honge.")
+elif keywords_count == 0:
+    st.warning("⚠️ Koi keyword nahi dala!")
+else:
+    st.info(f"✅ {keywords_count}/5 keywords selected")
+
+# Show fixed regions info
+st.markdown("---")
+st.markdown("### 🌍 Search Regions (Fixed - Top 10 Premium CPM)")
+st.success("🏆 **US, AU, NO, CH, CA, GB, DE, LU, SE, NL** - These 10 premium CPM countries are used for searching.")
 
 
 # ------------------------------------------------------------
@@ -684,7 +737,14 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
         st.error("⚠️ Keywords daal do!")
         st.stop()
     
-    keywords = list(dict.fromkeys([kw.strip() for line in keyword_input.splitlines() for kw in line.split(",") if kw.strip()]))
+    # Parse keywords and limit to 5
+    keywords = list(dict.fromkeys([kw.strip() for line in keyword_input.splitlines() for kw in line.split(",") if kw.strip()]))[:5]
+    
+    if len(keywords) == 0:
+        st.error("⚠️ Koi valid keyword nahi mila!")
+        st.stop()
+    
+    st.info(f"🔍 Searching with {len(keywords)} keywords in {len(search_regions)} premium countries")
     
     all_results = []
     channel_cache = {}
@@ -717,7 +777,7 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                     
                 current_op += 1
                 progress_bar.progress(current_op / total_ops)
-                status_text.markdown(f"🔍 `{kw}` | {order} | {region}")
+                status_text.markdown(f"🔍 `{kw}` | {order} | {region} | Quota: {st.session_state['quota_used']}/{DAILY_QUOTA_LIMIT}")
                 
                 search_params = {
                     "part": "snippet", "q": kw, "type": "video", "order": order,
@@ -731,7 +791,7 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                         quota_exceeded = True
                         quota_warning.warning("⚠️ API Quota khatam ho gaya! Jo results mil chuke hain wo show ho rahe hain...")
                 else:
-                    data = fetch_json(SEARCH_URL, {**search_params, "key": API_KEY})
+                    data = fetch_json(SEARCH_URL, {**search_params, "key": API_KEY}, api_type='search')
                     if data == "QUOTA":
                         quota_exceeded = True
                         quota_warning.warning("⚠️ API Quota khatam ho gaya! Jo results mil chuke hain wo show ho rahe hain...")
@@ -760,7 +820,7 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                     if quota_exceeded:
                         break
                     batch = video_ids[i:i+50]
-                    vid_data = fetch_json(VIDEOS_URL, {"part": "statistics,contentDetails", "id": ",".join(batch), "key": API_KEY})
+                    vid_data = fetch_json(VIDEOS_URL, {"part": "statistics,contentDetails", "id": ",".join(batch), "key": API_KEY}, api_type='videos')
                     if vid_data == "QUOTA":
                         quota_exceeded = True
                         quota_warning.warning("⚠️ API Quota khatam ho gaya! Jo results mil chuke hain wo show ho rahe hain...")
@@ -806,6 +866,12 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                     if views < min_views or (max_views > 0 and views > max_views):
                         continue
                     if not (min_subs <= subs <= max_subs):
+                        continue
+                    
+                    # Channel video count filter
+                    if total_videos < min_channel_videos:
+                        continue
+                    if max_channel_videos > 0 and total_videos > max_channel_videos:
                         continue
                     
                     if channel_age != "Any":
@@ -899,16 +965,18 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
         - ✅ Keywords completed: **{stats['keywords_completed']}/{len(keywords)}**
         - ✅ Videos searched: **{stats['total_searched']}**
         - ✅ Results found: **{stats['final']}**
+        - 📊 Quota Used: **{st.session_state['quota_used']}/{DAILY_QUOTA_LIMIT}**
         
         📌 Jo results mil chuke hain wo neeche show ho rahe hain. Quota midnight Pacific Time pe reset hota hai.
         """)
     
     # Stats
     st.markdown("### 📊 Statistics")
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric("Total Searched", stats["total_searched"])
     col2.metric("Keywords Done", f"{stats['keywords_completed']}/{len(keywords)}")
     col3.metric("Results Found", stats["final"])
+    col4.metric("Quota Used", f"{st.session_state['quota_used']:,}")
     
     # Show results if any
     if not all_results:
