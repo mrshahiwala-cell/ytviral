@@ -1,44 +1,50 @@
+# Updated Code with Total Videos, Upload Schedule & Monetization Status
+
+Yeh raha fully upgraded code with new features:
+
+```python
 import streamlit as st
 import requests
 from datetime import datetime, timedelta
 import pandas as pd
 import re
 from collections import defaultdict
-from io import BytesIO
-import base64
 
 # ------------------------------------------------------------
 # APP CONFIG
 # ------------------------------------------------------------
 st.set_page_config(page_title="🎯 Faceless Viral Hunter PRO", layout="wide")
 st.title("🎯 Faceless Viral Hunter PRO")
-st.markdown("**Find viral faceless channels in ANY niche!**")
+st.markdown("**Reddit Stories, AITA, Horror, Cash Cow, Motivation - FACELESS channels ka king!**")
 
 API_KEY = st.secrets["YOUTUBE_API_KEY"]
 
 SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
 CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels"
+ACTIVITIES_URL = "https://www.googleapis.com/youtube/v3/activities"
 
 # ------------------------------------------------------------
-# FACELESS DETECTION KEYWORDS (Generic - works for any niche)
+# FACELESS DETECTION KEYWORDS (Enhanced)
 # ------------------------------------------------------------
 FACELESS_INDICATORS = [
-    "stories", "facts", "explained", "documentary", "compilation", "top 10",
+    "stories", "reddit", "aita", "am i the", "horror", "scary", "creepy",
+    "nightmare", "revenge", "update", "confession", "askreddit", "tifu",
+    "relationship", "cheating", "karma", "tales", "narration", "narrator",
+    "motivation", "motivational", "stoic", "stoicism", "wisdom", "quotes",
+    "facts", "explained", "documentary", "history", "mystery", "unsolved",
+    "crime", "true crime", "case", "cash cow", "compilation", "top 10",
     "top 5", "ranking", "countdown", "best of", "worst of", "gaming",
     "gameplay", "walkthrough", "tutorial", "how to", "guide", "tips",
     "ai voice", "text to speech", "tts", "automated", "no face",
-    "anonymous", "faceless", "voice over", "voiceover", "narrated",
-    "relaxing", "asmr", "ambient", "music", "beats", "lofi", "study",
-    "meditation", "nature", "sounds", "white noise", "rain", "sleep",
-    "satisfying", "oddly satisfying", "craft", "diy", "cooking", "recipe",
-    "news", "daily", "update", "highlights", "clips", "moments"
+    "anonymous", "faceless", "voice over", "voiceover", "narrated"
 ]
 
 FACELESS_DESCRIPTION_KEYWORDS = [
     "ai generated", "text to speech", "tts", "voice over", "narration",
-    "automated", "compilation", "no face", "faceless", "anonymous channel",
-    "stock footage", "b-roll", "royalty free", "creative commons"
+    "reddit stories", "scary stories", "horror stories", "true stories",
+    "motivation", "stoicism", "self improvement", "cash cow", "automated",
+    "compilation", "no face", "faceless", "anonymous channel"
 ]
 
 PREMIUM_COUNTRIES = {
@@ -46,296 +52,146 @@ PREMIUM_COUNTRIES = {
     'SE', 'NO', 'DK', 'FI', 'IE', 'LU', 'JP', 'KR', 'SG', 'HK'
 }
 
-MONETIZATION_COUNTRIES = {
-    'US', 'CA', 'GB', 'AU', 'NZ', 'DE', 'FR', 'IT', 'ES', 'NL', 'BE', 'AT', 'CH',
-    'SE', 'NO', 'DK', 'FI', 'IE', 'LU', 'JP', 'KR', 'SG', 'HK', 'IN', 'BR', 'MX',
-    'AR', 'PL', 'CZ', 'RO', 'GR', 'PT', 'HU', 'TW', 'TH', 'MY', 'ID', 'PH', 'VN',
-    'ZA', 'NG', 'EG', 'PK', 'BD', 'RU', 'UA', 'TR', 'SA', 'AE', 'IL', 'CL', 'CO', 'PE'
-}
+# ------------------------------------------------------------
+# SIDEBAR - Enhanced Settings
+# ------------------------------------------------------------
+st.sidebar.header("⚙️ Advanced Settings")
 
-CPM_RATES = {
-    'US': 4.0, 'CA': 3.5, 'GB': 3.5, 'AU': 4.0, 'NZ': 3.0,
-    'DE': 3.5, 'FR': 2.5, 'IT': 2.0, 'ES': 2.0, 'NL': 3.0,
-    'BE': 2.5, 'AT': 3.0, 'CH': 4.5, 'SE': 3.0, 'NO': 4.0,
-    'DK': 3.0, 'FI': 2.5, 'IE': 3.0, 'LU': 3.5, 'JP': 2.5,
-    'KR': 2.0, 'SG': 2.5, 'HK': 2.0, 'IN': 0.5, 'BR': 0.8,
-    'MX': 0.7, 'PH': 0.3, 'ID': 0.4, 'PK': 0.3, 'N/A': 1.0
-}
+with st.sidebar.expander("📅 Time Filters", expanded=True):
+    days = st.slider("Videos from last X days", 1, 90, 14)
+    channel_age = st.selectbox(
+        "Channel Created After",
+        ["2025", "2024", "2023", "2022", "Any"],
+        index=1
+    )
 
+with st.sidebar.expander("📊 View Filters", expanded=True):
+    min_views = st.number_input("Min Views", min_value=1000, value=10000, step=1000)
+    max_views = st.number_input("Max Views (0=No Limit)", min_value=0, value=0, step=10000)
+    min_virality = st.slider("Min Virality Score (Views/Day)", 0, 10000, 500)
+
+with st.sidebar.expander("👥 Subscriber Filters", expanded=True):
+    min_subs = st.number_input("Min Subscribers", min_value=0, value=100)
+    max_subs = st.number_input("Max Subscribers", min_value=0, value=500000)
+
+with st.sidebar.expander("🎬 Video Type", expanded=True):
+    video_type = st.selectbox("Video Duration", ["All", "Long (5min+)", "Medium (1-5min)", "Shorts (<1min)"])
+
+with st.sidebar.expander("🎯 Faceless Detection", expanded=True):
+    faceless_only = st.checkbox("Only Faceless Channels", value=True)
+    faceless_strictness = st.select_slider(
+        "Detection Strictness",
+        options=["Relaxed", "Normal", "Strict"],
+        value="Normal"
+    )
+
+with st.sidebar.expander("💰 Monetization Filter", expanded=True):
+    monetized_only = st.checkbox("Only Likely Monetized Channels", value=False)
+    min_upload_frequency = st.selectbox(
+        "Min Upload Frequency",
+        ["Any", "Daily", "2-3 per week", "Weekly", "Monthly"],
+        index=0
+    )
+
+with st.sidebar.expander("🌍 Region Filters", expanded=False):
+    premium_only = st.checkbox("Only Premium CPM Countries", value=False)
+    search_regions = st.multiselect(
+        "Search in Regions",
+        ["US", "GB", "CA", "AU", "IN", "PH"],
+        default=["US"]
+    )
+
+with st.sidebar.expander("🔍 Search Settings", expanded=False):
+    search_orders = st.multiselect(
+        "Search Order (Multiple = More Results)",
+        ["viewCount", "relevance", "date", "rating"],
+        default=["viewCount", "relevance"]
+    )
+    results_per_keyword = st.slider("Results per keyword", 50, 150, 100)
+    use_pagination = st.checkbox("Use Pagination (More Results)", value=True)
+    fetch_upload_schedule = st.checkbox("Fetch Upload Schedule (Uses more quota)", value=True)
 
 # ------------------------------------------------------------
-# HTML REPORT GENERATOR
+# KEYWORDS INPUT - Enhanced
 # ------------------------------------------------------------
-def generate_html_report(df, stats, quota_exceeded=False):
-    """Generate beautiful HTML report with clickable links"""
-    
-    total_views = df['Views'].sum() if len(df) > 0 else 0
-    avg_virality = df['Virality'].mean() if len(df) > 0 else 0
-    monetized_count = len(df[df['MonetizationScore'] >= 70]) if len(df) > 0 else 0
-    total_revenue = df['EstRevenue'].sum() if 'EstRevenue' in df.columns and len(df) > 0 else 0
-    
-    quota_warning = ""
-    if quota_exceeded:
-        quota_warning = """
-        <div style="background: rgba(255, 193, 7, 0.2); border: 1px solid #ffc107; border-radius: 10px; padding: 15px; margin-bottom: 20px; text-align: center;">
-            <strong>⚠️ API Quota Exhausted!</strong> - Partial results shown below. Full quota resets at midnight Pacific Time.
-        </div>
-        """
-    
-    html = f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Faceless Viral Hunter PRO Report - {datetime.now().strftime("%Y-%m-%d")}</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            min-height: 100vh;
-            color: #e4e4e4;
-            line-height: 1.6;
-        }}
-        .container {{ max-width: 1400px; margin: 0 auto; padding: 20px; }}
-        .header {{
-            text-align: center;
-            padding: 40px 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 20px;
-            margin-bottom: 30px;
-            box-shadow: 0 10px 40px rgba(102, 126, 234, 0.3);
-        }}
-        .header h1 {{ font-size: 2.5rem; font-weight: 700; margin-bottom: 10px; }}
-        .header p {{ opacity: 0.9; font-size: 1.1rem; }}
-        .summary-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 40px;
-        }}
-        .stat-card {{
-            background: rgba(255,255,255,0.05);
-            backdrop-filter: blur(10px);
-            border-radius: 16px;
-            padding: 25px;
-            text-align: center;
-            border: 1px solid rgba(255,255,255,0.1);
-            transition: transform 0.3s, box-shadow 0.3s;
-        }}
-        .stat-card:hover {{
-            transform: translateY(-5px);
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-        }}
-        .stat-card .number {{
-            font-size: 2rem;
-            font-weight: 700;
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }}
-        .stat-card .label {{ font-size: 0.9rem; color: #888; margin-top: 5px; }}
-        .section-title {{
-            font-size: 1.8rem;
-            font-weight: 600;
-            margin-bottom: 25px;
-            padding-bottom: 10px;
-            border-bottom: 2px solid rgba(102, 126, 234, 0.3);
-        }}
-        .video-card {{
-            background: rgba(255,255,255,0.03);
-            border-radius: 16px;
-            padding: 25px;
-            margin-bottom: 20px;
-            border: 1px solid rgba(255,255,255,0.08);
-            transition: all 0.3s ease;
-        }}
-        .video-card:hover {{
-            background: rgba(255,255,255,0.06);
-            border-color: rgba(102, 126, 234, 0.3);
-        }}
-        .video-header {{ display: flex; gap: 20px; margin-bottom: 20px; }}
-        .thumbnail {{ width: 200px; height: 112px; border-radius: 12px; object-fit: cover; flex-shrink: 0; }}
-        .video-info {{ flex: 1; }}
-        .video-title {{ font-size: 1.2rem; font-weight: 600; margin-bottom: 10px; color: #fff; }}
-        .video-title a {{ color: #fff; text-decoration: none; }}
-        .video-title a:hover {{ color: #667eea; }}
-        .channel-name {{ display: inline-block; color: #667eea; text-decoration: none; font-weight: 500; margin-bottom: 8px; }}
-        .channel-name:hover {{ text-decoration: underline; }}
-        .video-meta {{ font-size: 0.9rem; color: #888; }}
-        .stats-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-            gap: 15px;
-            margin: 20px 0;
-        }}
-        .stat-item {{ background: rgba(255,255,255,0.05); border-radius: 10px; padding: 15px; text-align: center; }}
-        .stat-value {{ font-size: 1.3rem; font-weight: 600; color: #fff; }}
-        .stat-label {{ font-size: 0.75rem; color: #888; margin-top: 5px; }}
-        .badge {{
-            display: inline-block;
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 0.8rem;
-            font-weight: 500;
-            margin-right: 8px;
-            margin-bottom: 8px;
-        }}
-        .badge-monetized {{ background: rgba(40, 167, 69, 0.2); color: #28a745; border: 1px solid rgba(40, 167, 69, 0.3); }}
-        .badge-possibly {{ background: rgba(255, 193, 7, 0.2); color: #ffc107; border: 1px solid rgba(255, 193, 7, 0.3); }}
-        .badge-not {{ background: rgba(220, 53, 69, 0.2); color: #dc3545; border: 1px solid rgba(220, 53, 69, 0.3); }}
-        .badge-faceless {{ background: rgba(102, 126, 234, 0.2); color: #667eea; border: 1px solid rgba(102, 126, 234, 0.3); }}
-        .badge-shorts {{ background: rgba(255, 0, 80, 0.2); color: #ff0050; border: 1px solid rgba(255, 0, 80, 0.3); }}
-        .badge-long {{ background: rgba(0, 150, 136, 0.2); color: #009688; border: 1px solid rgba(0, 150, 136, 0.3); }}
-        .action-links {{ margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap; }}
-        .action-link {{
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 10px 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            text-decoration: none;
-            border-radius: 8px;
-            font-size: 0.9rem;
-            font-weight: 500;
-            transition: all 0.3s;
-        }}
-        .action-link:hover {{ transform: translateY(-2px); box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4); }}
-        .action-link.secondary {{ background: rgba(255,255,255,0.1); }}
-        .details-section {{
-            margin-top: 15px;
-            padding-top: 15px;
-            border-top: 1px solid rgba(255,255,255,0.1);
-            font-size: 0.85rem;
-            color: #999;
-        }}
-        .footer {{ text-align: center; padding: 30px; margin-top: 40px; color: #666; font-size: 0.9rem; }}
-        @media (max-width: 768px) {{
-            .video-header {{ flex-direction: column; }}
-            .thumbnail {{ width: 100%; height: auto; aspect-ratio: 16/9; }}
-            .header h1 {{ font-size: 1.8rem; }}
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🎯 Faceless Viral Hunter PRO</h1>
-            <p>Report Generated: {datetime.now().strftime("%B %d, %Y at %I:%M %p")}</p>
-        </div>
-        
-        {quota_warning}
-        
-        <div class="summary-grid">
-            <div class="stat-card">
-                <div class="number">{len(df)}</div>
-                <div class="label">📊 Total Channels</div>
-            </div>
-            <div class="stat-card">
-                <div class="number">{total_views:,.0f}</div>
-                <div class="label">👁️ Total Views</div>
-            </div>
-            <div class="stat-card">
-                <div class="number">{avg_virality:,.0f}/day</div>
-                <div class="label">🔥 Avg Virality</div>
-            </div>
-            <div class="stat-card">
-                <div class="number">{monetized_count}</div>
-                <div class="label">💰 Monetized</div>
-            </div>
-            <div class="stat-card">
-                <div class="number">${total_revenue:,.0f}</div>
-                <div class="label">💵 Est. Revenue</div>
-            </div>
-        </div>
-        
-        <h2 class="section-title">🎬 Channel Results ({len(df)} found)</h2>
-"""
-    
-    for idx, row in df.iterrows():
-        if row['MonetizationScore'] >= 70:
-            mon_class = "badge-monetized"
-            mon_text = "🟢 Likely Monetized"
-        elif row['MonetizationScore'] >= 50:
-            mon_class = "badge-possibly"
-            mon_text = "🟡 Possibly Monetized"
-        else:
-            mon_class = "badge-not"
-            mon_text = "🔴 Not Monetized"
-        
-        faceless_text = "✅ Faceless" if row['Faceless'] == "YES" else "🤔 Maybe Faceless"
-        est_revenue = row.get('EstRevenue', 0)
-        shorts_count = row.get('ShortsCount', 'N/A')
-        long_count = row.get('LongCount', 'N/A')
-        
-        html += f"""
-        <div class="video-card">
-            <div class="video-header">
-                <img src="{row['Thumb']}" alt="Thumbnail" class="thumbnail" loading="lazy">
-                <div class="video-info">
-                    <h3 class="video-title">
-                        <a href="{row['Link']}" target="_blank">{row['Title']}</a>
-                    </h3>
-                    <a href="{row['ChannelLink']}" target="_blank" class="channel-name">📺 {row['Channel']}</a>
-                    <div class="video-meta">
-                        🌍 {row['Country']} • 📅 Created: {row['ChCreated']} • 🎬 {row['TotalVideos']:,} videos
-                    </div>
-                    <div class="video-meta" style="margin-top: 5px;">
-                        <span class="badge badge-shorts">🎬 Shorts: {shorts_count}</span>
-                        <span class="badge badge-long">🎥 Long: {long_count}</span>
-                    </div>
-                </div>
-            </div>
-            <div class="stats-grid">
-                <div class="stat-item"><div class="stat-value">{row['Views']:,}</div><div class="stat-label">👁️ Views</div></div>
-                <div class="stat-item"><div class="stat-value">{row['Subs']:,}</div><div class="stat-label">👥 Subscribers</div></div>
-                <div class="stat-item"><div class="stat-value">{row['Virality']:,}/day</div><div class="stat-label">🔥 Virality</div></div>
-                <div class="stat-item"><div class="stat-value">{row['Engagement%']}%</div><div class="stat-label">💬 Engagement</div></div>
-                <div class="stat-item"><div class="stat-value">{row['UploadsPerWeek']:.1f}/wk</div><div class="stat-label">📤 Uploads</div></div>
-                <div class="stat-item"><div class="stat-value">${est_revenue:,.0f}</div><div class="stat-label">💵 Est. Revenue</div></div>
-            </div>
-            <div>
-                <span class="badge {mon_class}">{mon_text} ({row['MonetizationScore']}%)</span>
-                <span class="badge badge-faceless">{faceless_text} ({row['FacelessScore']}%)</span>
-            </div>
-            <div class="details-section">
-                ⏱️ Duration: {row['DurationStr']} ({row['Type']}) • 👍 {row['Likes']:,} likes • 💬 {row['Comments']:,} comments • 📤 Uploaded: {row['Uploaded']} • 🔑 Keyword: {row['Keyword']}
-            </div>
-            <div class="action-links">
-                <a href="{row['Link']}" target="_blank" class="action-link">▶️ Watch Video</a>
-                <a href="{row['ChannelLink']}" target="_blank" class="action-link secondary">📺 View Channel</a>
-            </div>
-        </div>
-"""
-    
-    html += """
-        <div class="footer">
-            <p>🎯 Faceless Viral Hunter PRO Report</p>
-            <p>Made with ❤️ for Muhammed Rizwan Qamar</p>
-        </div>
-    </div>
-</body>
-</html>
-"""
-    return html
+st.markdown("### 🔑 Keywords / Titles")
 
+default_keywords = """reddit stories
+aita
+am i the asshole
+reddit relationship advice
+reddit cheating stories
+true horror stories
+scary stories
+mr nightmare type
+creepypasta
+pro revenge reddit
+nuclear revenge
+malicious compliance
+entitled parents
+choosing beggars
+tifu reddit
+best reddit posts
+askreddit
+reddit updates
+relationship drama
+motivation
+stoicism
+stoic quotes
+self improvement
+marcus aurelius
+dark psychology
+sigma mindset
+cash cow
+top 10 facts
+explained documentary
+true crime
+unsolved mysteries
+conspiracy theories
+history facts
+scary mysteries
+creepy compilations"""
+
+keyword_input = st.text_area(
+    "Enter Keywords (One per line - More keywords = More results)",
+    height=300,
+    value=default_keywords
+)
+
+# Quick keyword templates
+col1, col2, col3, col4 = st.columns(4)
+with col1:
+    if st.button("📖 Reddit Niche"):
+        st.session_state.keywords = "reddit stories\naita\nam i the asshole\npro revenge\nnuclear revenge\nmalicious compliance\nentitled parents\nreddit updates\nreddit drama"
+with col2:
+    if st.button("👻 Horror Niche"):
+        st.session_state.keywords = "true horror stories\nscary stories\ncreepypasta\nmr nightmare\nhorror narration\ncreepy stories\nparanormal stories\ntrue scary"
+with col3:
+    if st.button("💪 Motivation Niche"):
+        st.session_state.keywords = "stoicism\nmotivation\nself improvement\nmarcus aurelius\nsigma mindset\ndark psychology\nmindset\ndiscipline"
+with col4:
+    if st.button("📺 Cash Cow"):
+        st.session_state.keywords = "top 10\nfacts about\nexplained\ndocumentary\ntrue crime\nmysteries\nconspiracy\nhistory facts"
 
 # ------------------------------------------------------------
-# HELPER FUNCTIONS
+# HELPER FUNCTIONS - Enhanced
 # ------------------------------------------------------------
 def fetch_json(url, params, retries=2):
+    """Safe wrapper for requests.get with retries"""
     for attempt in range(retries):
         try:
             resp = requests.get(url, params=params, timeout=30)
             if resp.status_code == 200:
                 return resp.json()
-            if "quotaExceeded" in resp.text or resp.status_code == 403:
+            if "quotaExceeded" in resp.text:
                 return "QUOTA"
-        except:
+            if resp.status_code == 403:
+                return "QUOTA"
+        except requests.exceptions.Timeout:
+            if attempt < retries - 1:
+                continue
+            return None
+        except Exception as e:
             if attempt < retries - 1:
                 continue
             return None
@@ -343,6 +199,7 @@ def fetch_json(url, params, retries=2):
 
 
 def parse_duration(duration):
+    """Convert ISO 8601 duration to seconds"""
     if not duration:
         return 0
     total = 0
@@ -358,6 +215,7 @@ def parse_duration(duration):
 
 
 def calculate_virality_score(views, published_at):
+    """Calculate views per day since upload"""
     try:
         pub_date = datetime.strptime(published_at[:19], "%Y-%m-%dT%H:%M:%S")
         days_since = max((datetime.utcnow() - pub_date).days, 1)
@@ -367,149 +225,282 @@ def calculate_virality_score(views, published_at):
 
 
 def calculate_engagement_rate(views, likes, comments):
+    """Calculate engagement percentage"""
     if views == 0:
         return 0
-    return round(((likes + comments * 2) / views) * 100, 2)
+    engagement = ((likes + comments * 2) / views) * 100
+    return round(engagement, 2)
 
 
-def calculate_upload_frequency(created_date, total_videos):
+def get_channel_upload_schedule(channel_id, api_key, limit=15):
+    """
+    Fetch recent videos from a channel to calculate upload frequency
+    Returns: (uploads_per_week, avg_days_between, schedule_label, last_upload_date)
+    """
     try:
-        if not created_date or total_videos == 0:
-            return 0, 0, "N/A"
-        created = datetime.strptime(created_date[:19], "%Y-%m-%dT%H:%M:%S")
-        days_active = max((datetime.utcnow() - created).days, 1)
-        weeks_active = max(days_active / 7, 1)
-        months_active = max(days_active / 30, 1)
-        uploads_per_week = round(total_videos / weeks_active, 2)
-        uploads_per_month = round(total_videos / months_active, 2)
+        # Search for recent videos from this channel
+        params = {
+            "part": "snippet",
+            "channelId": channel_id,
+            "type": "video",
+            "order": "date",
+            "maxResults": limit,
+            "key": api_key
+        }
         
-        if uploads_per_week >= 7:
-            schedule = f"🔥 Daily+ ({uploads_per_week:.1f}/week)"
-        elif uploads_per_week >= 3:
-            schedule = f"📈 Very Active ({uploads_per_week:.1f}/week)"
-        elif uploads_per_week >= 1:
-            schedule = f"✅ Regular ({uploads_per_week:.1f}/week)"
-        elif uploads_per_week >= 0.5:
-            schedule = f"📅 Bi-weekly"
+        data = fetch_json(SEARCH_URL, params)
+        
+        if data == "QUOTA" or not data:
+            return None, None, "Unknown", None
+        
+        items = data.get("items", [])
+        
+        if len(items) < 2:
+            return 0, 0, "Inactive", None
+        
+        # Extract upload dates
+        upload_dates = []
+        for item in items:
+            try:
+                pub_date = datetime.strptime(
+                    item["snippet"]["publishedAt"][:19], 
+                    "%Y-%m-%dT%H:%M:%S"
+                )
+                upload_dates.append(pub_date)
+            except:
+                continue
+        
+        if len(upload_dates) < 2:
+            return 0, 0, "Inactive", None
+        
+        # Sort dates (newest first)
+        upload_dates.sort(reverse=True)
+        last_upload = upload_dates[0]
+        
+        # Calculate gaps between uploads
+        gaps = []
+        for i in range(len(upload_dates) - 1):
+            gap = (upload_dates[i] - upload_dates[i + 1]).days
+            gaps.append(max(gap, 0))
+        
+        avg_days_between = sum(gaps) / len(gaps) if gaps else 0
+        
+        # Calculate uploads per week
+        if avg_days_between > 0:
+            uploads_per_week = round(7 / avg_days_between, 1)
         else:
-            schedule = f"⏸️ Inactive"
+            uploads_per_week = 7  # Daily or more
         
-        return uploads_per_week, uploads_per_month, schedule
-    except:
-        return 0, 0, "N/A"
+        # Determine schedule label
+        if avg_days_between <= 1:
+            schedule_label = "Daily+"
+        elif avg_days_between <= 2:
+            schedule_label = "Daily"
+        elif avg_days_between <= 3.5:
+            schedule_label = "2-3/week"
+        elif avg_days_between <= 7:
+            schedule_label = "Weekly"
+        elif avg_days_between <= 14:
+            schedule_label = "Bi-weekly"
+        elif avg_days_between <= 30:
+            schedule_label = "Monthly"
+        else:
+            schedule_label = "Irregular"
+        
+        # Check if channel is inactive (no upload in last 30 days)
+        days_since_last = (datetime.utcnow() - last_upload).days
+        if days_since_last > 30:
+            schedule_label = f"Inactive ({days_since_last}d ago)"
+        
+        return uploads_per_week, round(avg_days_between, 1), schedule_label, last_upload.strftime("%Y-%m-%d")
+        
+    except Exception as e:
+        return None, None, "Error", None
 
 
-def check_monetization_status(channel_data):
+def estimate_monetization_status(channel_data, upload_schedule_data):
+    """
+    Estimate if a channel is likely monetized based on available signals
+    Returns: (status, confidence, reasons)
+    
+    Monetization requirements:
+    - 1,000+ subscribers
+    - 4,000+ watch hours in last 12 months (can't verify via API)
+    - 30+ days old channel
+    - No community guideline strikes
+    - AdSense account linked
+    """
     reasons = []
     score = 0
+    
     subs = channel_data.get("subs", 0)
-    total_videos = channel_data.get("video_count", 0)
+    total_views = channel_data.get("total_views", 0)
+    video_count = channel_data.get("video_count", 0)
     created = channel_data.get("created", "")
     country = channel_data.get("country", "N/A")
-    total_views = channel_data.get("total_views", 0)
     
+    # Check 1: Subscriber threshold (1000+ required)
     if subs >= 1000:
         score += 30
-        reasons.append(f"✅ {subs:,} subs")
+        reasons.append(f"✓ {subs:,} subs (1K+ met)")
     elif subs >= 500:
         score += 10
-        reasons.append(f"⏳ {subs:,} subs")
+        reasons.append(f"△ {subs:,} subs (close to 1K)")
     else:
-        reasons.append(f"❌ {subs:,} subs")
+        reasons.append(f"✗ {subs:,} subs (<1K)")
     
+    # Check 2: Channel age (30+ days required)
     if created:
         try:
-            created_date = datetime.strptime(created[:19], "%Y-%m-%dT%H:%M:%S")
-            days_old = (datetime.utcnow() - created_date).days
-            if days_old >= 30:
+            created_date = datetime.strptime(created[:10], "%Y-%m-%d")
+            channel_age_days = (datetime.utcnow() - created_date).days
+            
+            if channel_age_days >= 30:
                 score += 15
-                reasons.append(f"✅ {days_old}d old")
+                reasons.append(f"✓ {channel_age_days} days old")
             else:
-                reasons.append(f"❌ {days_old}d old")
+                reasons.append(f"✗ Only {channel_age_days} days old")
         except:
             pass
     
-    if country in MONETIZATION_COUNTRIES:
-        score += 15
-        reasons.append(f"✅ {country}")
+    # Check 3: Estimated watch hours based on views
+    # Rough estimate: avg view duration ~3-4 min for faceless content
+    # 4000 hours = 240,000 minutes of watch time
+    # If avg 50% retention on 8 min video = 4 min watched
+    # Need ~60,000 views minimum for 4K hours
+    estimated_watch_hours = (total_views * 3) / 60  # Assuming 3 min avg
     
-    estimated_watch_hours = (total_views * 3.2) / 60
     if estimated_watch_hours >= 4000:
         score += 25
-        reasons.append(f"✅ {estimated_watch_hours:,.0f} hrs")
+        reasons.append(f"✓ Est. {estimated_watch_hours:,.0f} watch hrs")
     elif estimated_watch_hours >= 2000:
         score += 15
-    
-    if total_videos >= 50:
-        score += 10
-    elif total_videos >= 20:
-        score += 5
-    
-    if score >= 70:
-        status = "🟢 LIKELY MONETIZED"
-    elif score >= 50:
-        status = "🟡 POSSIBLY MONETIZED"
-    elif score >= 30:
-        status = "🟠 CLOSE TO MONETIZATION"
+        reasons.append(f"△ Est. {estimated_watch_hours:,.0f} watch hrs")
     else:
-        status = "🔴 NOT MONETIZED"
+        reasons.append(f"✗ Est. {estimated_watch_hours:,.0f} watch hrs")
     
-    return status, "High" if score >= 70 else "Low", score, reasons
+    # Check 4: Content volume (more videos = more likely monetized)
+    if video_count >= 50:
+        score += 10
+        reasons.append(f"✓ {video_count} videos")
+    elif video_count >= 20:
+        score += 5
+        reasons.append(f"△ {video_count} videos")
+    
+    # Check 5: Upload consistency
+    if upload_schedule_data:
+        schedule_label = upload_schedule_data.get("schedule_label", "Unknown")
+        if "Daily" in schedule_label or "2-3/week" in schedule_label:
+            score += 10
+            reasons.append(f"✓ Active: {schedule_label}")
+        elif "Inactive" in schedule_label:
+            score -= 10
+            reasons.append(f"✗ {schedule_label}")
+    
+    # Check 6: Premium country (easier monetization)
+    if country in PREMIUM_COUNTRIES:
+        score += 5
+        reasons.append(f"✓ Premium country: {country}")
+    
+    # Check 7: Average views per video
+    if video_count > 0:
+        avg_views = total_views / video_count
+        if avg_views >= 10000:
+            score += 10
+            reasons.append(f"✓ Avg {avg_views:,.0f} views/vid")
+        elif avg_views >= 5000:
+            score += 5
+    
+    # Determine status
+    if score >= 70:
+        status = "Likely Monetized ✅"
+        confidence = "High"
+    elif score >= 50:
+        status = "Possibly Monetized 🟡"
+        confidence = "Medium"
+    elif score >= 30:
+        status = "Eligible Soon 🟠"
+        confidence = "Low"
+    else:
+        status = "Not Monetized ❌"
+        confidence = "Low"
+    
+    return status, confidence, score, reasons
 
 
 def detect_faceless_advanced(channel_data, strictness="Normal"):
+    """
+    Advanced faceless detection using multiple signals
+    Returns: (is_faceless: bool, confidence: int, reasons: list)
+    """
     reasons = []
     score = 0
+    
     profile_url = channel_data.get("profile", "")
     banner_url = channel_data.get("banner", "")
     channel_name = channel_data.get("name", "").lower()
     description = channel_data.get("description", "").lower()
     
+    # Signal 1: Default/Generic Profile Picture
     if "default.jpg" in profile_url or "s88-c-k-c0x00ffffff-no-rj" in profile_url:
         score += 30
-        reasons.append("Default pic")
+        reasons.append("Default profile pic")
     
+    # Signal 2: No Banner
     if not banner_url:
         score += 20
         reasons.append("No banner")
     
+    # Signal 3: Channel name contains faceless keywords
     name_matches = sum(1 for kw in FACELESS_INDICATORS if kw in channel_name)
     if name_matches >= 1:
         score += min(name_matches * 15, 30)
-        reasons.append(f"Name match")
+        reasons.append(f"Name matches ({name_matches} keywords)")
     
+    # Signal 4: Description contains faceless keywords
     desc_matches = sum(1 for kw in FACELESS_DESCRIPTION_KEYWORDS if kw in description)
     if desc_matches >= 1:
         score += min(desc_matches * 10, 25)
-        reasons.append(f"Desc match")
+        reasons.append(f"Description matches ({desc_matches} keywords)")
     
+    # Signal 5: Generic/AI channel patterns
+    ai_patterns = ["ai", "voice", "narrator", "stories", "compilation", "facts", "top"]
+    ai_matches = sum(1 for p in ai_patterns if p in channel_name)
+    if ai_matches >= 2:
+        score += 15
+        reasons.append("AI/Compilation pattern")
+    
+    # Signal 6: No custom URL (newer channels)
+    if channel_data.get("custom_url") is None:
+        score += 5
+        reasons.append("No custom URL")
+    
+    # Determine threshold based on strictness
     thresholds = {"Relaxed": 20, "Normal": 35, "Strict": 55}
     threshold = thresholds.get(strictness, 35)
     
-    return score >= threshold, min(score, 100), reasons
+    is_faceless = score >= threshold
+    confidence = min(score, 100)
+    
+    return is_faceless, confidence, reasons
 
 
 def get_video_type_label(duration):
+    """Categorize video by duration"""
     if duration < 60:
         return "Shorts"
     elif duration < 300:
         return "Medium"
-    return "Long"
-
-
-def estimate_revenue(views, country, video_count):
-    cpm = CPM_RATES.get(country, 1.0)
-    monetized_views = views * 0.55
-    revenue = (monetized_views / 1000) * cpm
-    monthly_revenue = revenue / max((video_count / 30), 1) if video_count > 0 else 0
-    return round(revenue, 2), round(monthly_revenue, 2)
+    else:
+        return "Long"
 
 
 def batch_fetch_channels(channel_ids, api_key, cache):
-    """Returns (cache, quota_exceeded)"""
+    """Fetch channel details in batches of 50"""
     new_ids = [cid for cid in channel_ids if cid not in cache]
+    
     if not new_ids:
-        return cache, False
+        return cache
     
     for i in range(0, len(new_ids), 50):
         batch = new_ids[i:i+50]
@@ -518,17 +509,23 @@ def batch_fetch_channels(channel_ids, api_key, cache):
             "id": ",".join(batch),
             "key": api_key
         }
+        
         data = fetch_json(CHANNELS_URL, params)
         if data == "QUOTA":
-            return cache, True
+            return "QUOTA"
         if not data:
             continue
-        
+            
         for c in data.get("items", []):
             sn = c["snippet"]
             stats = c["statistics"]
             brand = c.get("brandingSettings", {})
             brand_img = brand.get("image", {})
+            brand_ch = brand.get("channel", {})
+            status = c.get("status", {})
+            
+            profile = sn.get("thumbnails", {}).get("default", {}).get("url", "")
+            banner = brand_img.get("bannerExternalUrl", "")
             
             cache[c["id"]] = {
                 "name": sn.get("title", ""),
@@ -538,481 +535,410 @@ def batch_fetch_channels(channel_ids, api_key, cache):
                 "created": sn.get("publishedAt", ""),
                 "country": sn.get("country", "N/A"),
                 "description": sn.get("description", ""),
-                "profile": sn.get("thumbnails", {}).get("default", {}).get("url", ""),
-                "banner": brand_img.get("bannerExternalUrl", ""),
-                "custom_url": sn.get("customUrl")
+                "profile": profile,
+                "banner": banner,
+                "custom_url": sn.get("customUrl"),
+                "keywords": brand_ch.get("keywords", ""),
+                "is_linked": status.get("isLinked", False),
+                "long_uploads_status": status.get("longUploadsStatus", ""),
+                "made_for_kids": status.get("madeForKids", False)
             }
-    return cache, False
-
-
-def fetch_channel_video_counts(channel_id, api_key):
-    """Fetch recent videos from channel and count shorts vs long"""
-    try:
-        search_params = {
-            "part": "id",
-            "channelId": channel_id,
-            "type": "video",
-            "maxResults": 50,
-            "order": "date",
-            "key": api_key
-        }
-        
-        data = fetch_json(SEARCH_URL, search_params)
-        if data == "QUOTA" or not data:
-            return None, None, True if data == "QUOTA" else False
-        
-        video_ids = [item["id"]["videoId"] for item in data.get("items", []) if item.get("id", {}).get("videoId")]
-        
-        if not video_ids:
-            return 0, 0, False
-        
-        vid_params = {
-            "part": "contentDetails",
-            "id": ",".join(video_ids),
-            "key": api_key
-        }
-        
-        vid_data = fetch_json(VIDEOS_URL, vid_params)
-        if vid_data == "QUOTA":
-            return None, None, True
-        if not vid_data:
-            return 0, 0, False
-        
-        shorts_count = 0
-        long_count = 0
-        
-        for v in vid_data.get("items", []):
-            duration = parse_duration(v["contentDetails"].get("duration", ""))
-            if duration < 60:
-                shorts_count += 1
-            elif duration >= 60:
-                long_count += 1
-        
-        return shorts_count, long_count, False
-        
-    except:
-        return 0, 0, False
+    
+    return cache
 
 
 def search_videos_with_pagination(keyword, params, api_key, max_pages=2):
-    """Returns (items, quota_exceeded)"""
+    """Search videos with pagination support"""
     all_items = []
     next_token = None
     
     for page in range(max_pages):
         search_params = params.copy()
         search_params["key"] = api_key
+        
         if next_token:
             search_params["pageToken"] = next_token
         
         data = fetch_json(SEARCH_URL, search_params)
+        
         if data == "QUOTA":
-            return all_items, True
+            return "QUOTA"
         if not data:
             break
+            
+        items = data.get("items", [])
+        all_items.extend(items)
         
-        all_items.extend(data.get("items", []))
         next_token = data.get("nextPageToken")
         if not next_token:
             break
     
-    return all_items, False
+    return all_items
 
 
-# ------------------------------------------------------------
-# SIDEBAR SETTINGS
-# ------------------------------------------------------------
-st.sidebar.header("⚙️ Settings")
-
-st.sidebar.info("⚡ **Quota Saving**: Max 5 keywords")
-
-with st.sidebar.expander("📅 Time Filters", expanded=True):
-    days = st.slider("Videos from last X days", 1, 90, 14)
-    channel_age = st.selectbox("Channel Created After", ["2025", "2024", "2023", "2022", "Any"], index=1)
-
-with st.sidebar.expander("📊 View Filters", expanded=True):
-    min_views = st.number_input("Min Views", min_value=1000, value=10000, step=1000)
-    max_views = st.number_input("Max Views (0=No Limit)", min_value=0, value=0, step=10000)
-    min_virality = st.slider("Min Virality (Views/Day)", 0, 10000, 500)
-
-with st.sidebar.expander("👥 Subscriber Filters", expanded=True):
-    min_subs = st.number_input("Min Subscribers", min_value=0, value=100)
-    max_subs = st.number_input("Max Subscribers", min_value=0, value=500000)
-
-with st.sidebar.expander("🎬 Channel Video Count", expanded=True):
-    min_channel_videos = st.number_input("Min Videos on Channel", min_value=0, value=0, step=10)
-    max_channel_videos = st.number_input("Max Videos on Channel", min_value=0, value=300, step=10)
-
-with st.sidebar.expander("📹 Video Type Filter", expanded=True):
-    video_type = st.selectbox(
-        "Video Duration Type", 
-        ["All", "Long Only (5min+)", "Medium (1-5min)", "Shorts Only (<1min)", "Long + Medium (No Shorts)"]
-    )
-
-with st.sidebar.expander("🎯 Faceless Detection", expanded=True):
-    faceless_only = st.checkbox("Only Faceless Channels", value=True)
-    faceless_strictness = st.select_slider("Detection Strictness", options=["Relaxed", "Normal", "Strict"], value="Normal")
-
-with st.sidebar.expander("💰 Monetization", expanded=False):
-    monetized_only = st.checkbox("Only Likely Monetized", value=False)
-    min_upload_frequency = st.slider("Min Uploads/Week", 0, 14, 0)
-
-with st.sidebar.expander("🌍 Region", expanded=False):
-    premium_only = st.checkbox("Only Premium CPM Countries", value=False)
-    search_regions = st.multiselect("Search Regions", ["US", "GB", "CA", "AU", "IN", "PH"], default=["US"])
-
-with st.sidebar.expander("🔍 Search Settings", expanded=False):
-    search_orders = st.multiselect("Search Order", ["viewCount", "relevance", "date", "rating"], default=["viewCount"])
-    use_pagination = st.checkbox("Use Pagination (more quota)", value=False)
-    fetch_shorts_long_count = st.checkbox("Fetch Shorts/Long counts", value=True)
-
-
-# ------------------------------------------------------------
-# KEYWORDS - ANY NICHE
-# ------------------------------------------------------------
-st.markdown("### 🔑 Enter Your Keywords (Any Niche)")
-st.caption("Enter any keywords you want - the tool works for ALL niches!")
-
-default_keywords = """your keyword 1
-your keyword 2
-your keyword 3"""
-
-keyword_input = st.text_area("Keywords (One per line, Max 5)", height=150, value=default_keywords, 
-                             help="Enter any keywords related to your niche")
-
-# Example templates for different niches
-st.markdown("**📌 Quick Examples:**")
-col1, col2, col3, col4, col5 = st.columns(5)
-with col1:
-    if st.button("📖 Reddit"):
-        st.session_state['kw'] = "reddit stories\naita\npro revenge"
-with col2:
-    if st.button("👻 Horror"):
-        st.session_state['kw'] = "scary stories\ntrue horror\ncreepypasta"
-with col3:
-    if st.button("💪 Motivation"):
-        st.session_state['kw'] = "stoicism\nmotivation\nself improvement"
-with col4:
-    if st.button("🎮 Gaming"):
-        st.session_state['kw'] = "gameplay\nwalkthrough\ngaming clips"
-with col5:
-    if st.button("🍳 Cooking"):
-        st.session_state['kw'] = "easy recipes\ncooking tips\nfood hacks"
-
-# Second row of examples
-col1, col2, col3, col4, col5 = st.columns(5)
-with col1:
-    if st.button("💰 Finance"):
-        st.session_state['kw'] = "make money\npassive income\nside hustle"
-with col2:
-    if st.button("🧘 ASMR"):
-        st.session_state['kw'] = "asmr\nrelaxing sounds\nsleep sounds"
-with col3:
-    if st.button("📚 Education"):
-        st.session_state['kw'] = "facts about\nexplained\ndocumentary"
-with col4:
-    if st.button("🎵 Music"):
-        st.session_state['kw'] = "lofi beats\nstudy music\nrelaxing music"
-with col5:
-    if st.button("🐾 Animals"):
-        st.session_state['kw'] = "funny animals\ncat videos\ndog compilation"
-
-# Update keyword input if template selected
-if 'kw' in st.session_state:
-    keyword_input = st.session_state['kw']
+def filter_by_upload_frequency(schedule_label, min_frequency):
+    """Check if upload frequency meets minimum requirement"""
+    if min_frequency == "Any":
+        return True
+    
+    frequency_order = {
+        "Daily+": 5,
+        "Daily": 4,
+        "2-3/week": 3,
+        "Weekly": 2,
+        "Bi-weekly": 1.5,
+        "Monthly": 1,
+        "Irregular": 0.5,
+        "Inactive": 0,
+        "Unknown": 0,
+        "Error": 0
+    }
+    
+    min_freq_map = {
+        "Daily": 4,
+        "2-3 per week": 3,
+        "Weekly": 2,
+        "Monthly": 1
+    }
+    
+    current_score = 0
+    for key, val in frequency_order.items():
+        if key in schedule_label:
+            current_score = val
+            break
+    
+    required_score = min_freq_map.get(min_frequency, 0)
+    
+    return current_score >= required_score
 
 
 # ------------------------------------------------------------
 # MAIN ACTION
 # ------------------------------------------------------------
-if st.button("🚀 HUNT VIRAL VIDEOS", type="primary", use_container_width=True):
+if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_width=True):
     
     if not keyword_input.strip():
-        st.error("⚠️ Keywords daal do!")
+        st.error("⚠️ Keywords daal do bhai!")
         st.stop()
     
-    # Limit to 5 keywords
-    all_keywords = list(dict.fromkeys([kw.strip() for line in keyword_input.splitlines() for kw in line.split(",") if kw.strip()]))
+    keywords = [kw.strip() for line in keyword_input.splitlines() 
+                for kw in line.split(",") if kw.strip()]
     
-    if len(all_keywords) > 5:
-        keywords = all_keywords[:5]
-        st.info(f"🔍 Using first 5 keywords: {', '.join(keywords)}")
-    else:
-        keywords = all_keywords
-        st.info(f"🔍 Searching: {', '.join(keywords)}")
+    # Remove duplicates while preserving order
+    keywords = list(dict.fromkeys(keywords))
     
     all_results = []
     channel_cache = {}
-    channel_shorts_long_cache = {}
+    upload_schedule_cache = {}
     seen_videos = set()
-    quota_exceeded = False
     
     published_after = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     
+    # Calculate total operations for progress
     total_ops = len(keywords) * len(search_orders) * len(search_regions)
     current_op = 0
     
     progress_bar = st.progress(0)
     status_text = st.empty()
-    quota_warning = st.empty()
     
-    stats = {"total_searched": 0, "final": 0, "keywords_completed": 0}
+    # Stats tracking
+    stats = {
+        "total_searched": 0,
+        "passed_views": 0,
+        "passed_subs": 0,
+        "passed_age": 0,
+        "passed_faceless": 0,
+        "passed_monetization": 0,
+        "passed_frequency": 0,
+        "final": 0
+    }
     
-    # Main search loop
+    # MAIN SEARCH LOOP
     for kw in keywords:
-        if quota_exceeded:
-            break
-            
         for order in search_orders:
-            if quota_exceeded:
-                break
-                
             for region in search_regions:
-                if quota_exceeded:
-                    break
-                    
                 current_op += 1
                 progress_bar.progress(current_op / total_ops)
-                status_text.markdown(f"🔍 `{kw}` | {order} | {region}")
+                status_text.markdown(f"🔍 **Searching:** `{kw}` | Order: `{order}` | Region: `{region}`")
                 
                 search_params = {
-                    "part": "snippet", "q": kw, "type": "video", "order": order,
-                    "publishedAfter": published_after, "maxResults": 50,
-                    "regionCode": region, "relevanceLanguage": "en", "safeSearch": "none"
+                    "part": "snippet",
+                    "q": kw,
+                    "type": "video",
+                    "order": order,
+                    "publishedAfter": published_after,
+                    "maxResults": 50,
+                    "regionCode": region,
+                    "relevanceLanguage": "en",
+                    "safeSearch": "none"
                 }
                 
                 if use_pagination:
-                    items, quota_hit = search_videos_with_pagination(kw, search_params, API_KEY, 2)
-                    if quota_hit:
-                        quota_exceeded = True
-                        quota_warning.warning("⚠️ API Quota khatam!")
+                    items = search_videos_with_pagination(kw, search_params, API_KEY, max_pages=2)
                 else:
                     data = fetch_json(SEARCH_URL, {**search_params, "key": API_KEY})
-                    if data == "QUOTA":
-                        quota_exceeded = True
-                        quota_warning.warning("⚠️ API Quota khatam!")
-                        items = []
-                    else:
-                        items = data.get("items", []) if data else []
+                    items = data.get("items", []) if data and data != "QUOTA" else []
+                
+                if items == "QUOTA":
+                    st.error("❌ API Quota khatam! Kal try karo ya API key change karo.")
+                    st.stop()
                 
                 if not items:
                     continue
                 
                 stats["total_searched"] += len(items)
                 
-                new_items = [item for item in items if item.get("id", {}).get("videoId") and item["id"]["videoId"] not in seen_videos]
-                for item in new_items:
-                    seen_videos.add(item["id"]["videoId"])
+                # Filter already seen videos
+                new_items = []
+                for item in items:
+                    vid = item.get("id", {}).get("videoId")
+                    if vid and vid not in seen_videos:
+                        seen_videos.add(vid)
+                        new_items.append(item)
                 
                 if not new_items:
                     continue
                 
-                video_ids = [i["id"]["videoId"] for i in new_items]
+                # Get video IDs and channel IDs
+                video_ids = [i["id"]["videoId"] for i in new_items if "videoId" in i.get("id", {})]
                 channel_ids = {i["snippet"]["channelId"] for i in new_items}
                 
-                # Fetch video stats
+                # Fetch video details
                 video_stats = {}
                 for i in range(0, len(video_ids), 50):
-                    if quota_exceeded:
-                        break
                     batch = video_ids[i:i+50]
-                    vid_data = fetch_json(VIDEOS_URL, {"part": "statistics,contentDetails", "id": ",".join(batch), "key": API_KEY})
+                    params = {
+                        "part": "statistics,contentDetails",
+                        "id": ",".join(batch),
+                        "key": API_KEY
+                    }
+                    vid_data = fetch_json(VIDEOS_URL, params)
+                    
                     if vid_data == "QUOTA":
-                        quota_exceeded = True
-                        quota_warning.warning("⚠️ API Quota khatam!")
-                        break
+                        st.error("❌ API Quota khatam!")
+                        st.stop()
+                    
                     if vid_data:
                         for v in vid_data.get("items", []):
+                            dur_sec = parse_duration(v["contentDetails"].get("duration", ""))
                             s = v.get("statistics", {})
                             video_stats[v["id"]] = {
                                 "views": int(s.get("viewCount", 0)),
                                 "likes": int(s.get("likeCount", 0)),
                                 "comments": int(s.get("commentCount", 0)),
-                                "duration": parse_duration(v["contentDetails"].get("duration", ""))
+                                "duration": dur_sec
                             }
                 
-                # Fetch channel stats
-                if not quota_exceeded:
-                    channel_cache, quota_hit = batch_fetch_channels(channel_ids, API_KEY, channel_cache)
-                    if quota_hit:
-                        quota_exceeded = True
-                        quota_warning.warning("⚠️ API Quota khatam!")
+                # Fetch channel details
+                result = batch_fetch_channels(channel_ids, API_KEY, channel_cache)
+                if result == "QUOTA":
+                    st.error("❌ API Quota khatam!")
+                    st.stop()
+                channel_cache = result
                 
-                # Process videos
+                # Fetch upload schedules for new channels
+                if fetch_upload_schedule:
+                    for cid in channel_ids:
+                        if cid not in upload_schedule_cache:
+                            status_text.markdown(f"📅 Fetching upload schedule for channel...")
+                            uploads_per_week, avg_days, schedule_label, last_upload = get_channel_upload_schedule(
+                                cid, API_KEY
+                            )
+                            upload_schedule_cache[cid] = {
+                                "uploads_per_week": uploads_per_week,
+                                "avg_days_between": avg_days,
+                                "schedule_label": schedule_label,
+                                "last_upload": last_upload
+                            }
+                
+                # Process and filter videos
                 for item in new_items:
                     sn = item["snippet"]
-                    vid = item["id"]["videoId"]
+                    vid = item["id"].get("videoId")
+                    if not vid:
+                        continue
+                    
                     cid = sn["channelId"]
                     v_stats = video_stats.get(vid, {})
                     ch = channel_cache.get(cid, {})
-                    
-                    if not v_stats:
-                        continue
+                    upload_data = upload_schedule_cache.get(cid, {})
                     
                     views = v_stats.get("views", 0)
                     likes = v_stats.get("likes", 0)
                     comments = v_stats.get("comments", 0)
                     duration = v_stats.get("duration", 0)
                     subs = ch.get("subs", 0)
-                    total_videos = ch.get("video_count", 0)
-                    total_channel_views = ch.get("total_views", 0)
                     
-                    # Filters
-                    if views < min_views or (max_views > 0 and views > max_views):
+                    # Filter 1: Minimum views
+                    if views < min_views:
                         continue
+                    if max_views > 0 and views > max_views:
+                        continue
+                    stats["passed_views"] += 1
+                    
+                    # Filter 2: Subscriber range
                     if not (min_subs <= subs <= max_subs):
                         continue
+                    stats["passed_subs"] += 1
                     
-                    # Channel video count filter
-                    if max_channel_videos > 0:
-                        if total_videos < min_channel_videos or total_videos > max_channel_videos:
-                            continue
-                    elif total_videos < min_channel_videos:
-                        continue
-                    
+                    # Filter 3: Channel age
                     if channel_age != "Any":
                         created_year = int(ch.get("created", "2000")[:4]) if ch.get("created") else 2000
                         if created_year < int(channel_age):
                             continue
+                    stats["passed_age"] += 1
                     
+                    # Filter 4: Faceless detection
                     if faceless_only:
-                        is_faceless, confidence, reasons = detect_faceless_advanced(ch, faceless_strictness)
+                        is_faceless, confidence, faceless_reasons = detect_faceless_advanced(ch, faceless_strictness)
                         if not is_faceless:
                             continue
                     else:
-                        is_faceless, confidence, reasons = detect_faceless_advanced(ch, faceless_strictness)
+                        is_faceless, confidence, faceless_reasons = detect_faceless_advanced(ch, faceless_strictness)
+                    stats["passed_faceless"] += 1
                     
+                    # Filter 5: Country
                     country = ch.get("country", "N/A")
                     if premium_only and country not in PREMIUM_COUNTRIES:
                         continue
                     
-                    # Video type filter
+                    # Filter 6: Video duration type
                     vtype = get_video_type_label(duration)
-                    
-                    if video_type == "Long Only (5min+)" and duration < 300:
+                    if video_type == "Long (5min+)" and duration < 300:
                         continue
-                    elif video_type == "Medium (1-5min)" and (duration < 60 or duration >= 300):
+                    if video_type == "Medium (1-5min)" and (duration < 60 or duration >= 300):
                         continue
-                    elif video_type == "Shorts Only (<1min)" and duration >= 60:
-                        continue
-                    elif video_type == "Long + Medium (No Shorts)" and duration < 60:
+                    if video_type == "Shorts (<1min)" and duration >= 60:
                         continue
                     
+                    # Calculate metrics
                     virality = calculate_virality_score(views, sn["publishedAt"])
+                    
+                    # Filter 7: Minimum virality
                     if virality < min_virality:
                         continue
                     
-                    uploads_per_week, uploads_per_month, schedule_desc = calculate_upload_frequency(ch.get("created", ""), total_videos)
-                    if min_upload_frequency > 0 and uploads_per_week < min_upload_frequency:
+                    # Filter 8: Upload frequency
+                    schedule_label = upload_data.get("schedule_label", "Unknown")
+                    if not filter_by_upload_frequency(schedule_label, min_upload_frequency):
                         continue
+                    stats["passed_frequency"] += 1
                     
-                    monetization_status, _, monetization_score, monetization_reasons = check_monetization_status(ch)
-                    if monetized_only and monetization_score < 50:
+                    # Get monetization estimate
+                    monetization_status, mon_confidence, mon_score, mon_reasons = estimate_monetization_status(
+                        ch, upload_data
+                    )
+                    
+                    # Filter 9: Monetization
+                    if monetized_only and "Likely" not in monetization_status and "Possibly" not in monetization_status:
                         continue
+                    stats["passed_monetization"] += 1
                     
-                    # Fetch shorts/long counts
-                    shorts_count = "N/A"
-                    long_count = "N/A"
-                    
-                    if fetch_shorts_long_count and not quota_exceeded:
-                        if cid in channel_shorts_long_cache:
-                            shorts_count, long_count = channel_shorts_long_cache[cid]
-                        else:
-                            status_text.markdown(f"📊 Counting videos for `{sn['channelTitle'][:25]}...`")
-                            s_count, l_count, quota_hit = fetch_channel_video_counts(cid, API_KEY)
-                            if quota_hit:
-                                quota_exceeded = True
-                                quota_warning.warning("⚠️ API Quota khatam!")
-                            elif s_count is not None:
-                                shorts_count = s_count
-                                long_count = l_count
-                                channel_shorts_long_cache[cid] = (shorts_count, long_count)
-                    
-                    est_revenue, monthly_revenue = estimate_revenue(total_channel_views, country, total_videos)
+                    engagement = calculate_engagement_rate(views, likes, comments)
+                    sub_view_ratio = round(views / max(subs, 1), 2)
                     
                     stats["final"] += 1
                     
+                    # Add result
                     all_results.append({
                         "Title": sn["title"],
                         "Channel": sn["channelTitle"],
                         "ChannelID": cid,
                         "Subs": subs,
-                        "TotalVideos": total_videos,
-                        "ShortsCount": shorts_count,
-                        "LongCount": long_count,
-                        "TotalChannelViews": total_channel_views,
-                        "UploadsPerWeek": uploads_per_week,
-                        "UploadsPerMonth": uploads_per_month,
-                        "UploadSchedule": schedule_desc,
-                        "MonetizationStatus": monetization_status,
-                        "MonetizationScore": monetization_score,
-                        "MonetizationReasons": " | ".join(monetization_reasons),
-                        "EstRevenue": est_revenue,
-                        "MonthlyRevenue": monthly_revenue,
+                        "TotalVideos": ch.get("video_count", 0),
+                        "TotalViews": ch.get("total_views", 0),
                         "Views": views,
                         "Likes": likes,
                         "Comments": comments,
                         "Virality": virality,
-                        "Engagement%": calculate_engagement_rate(views, likes, comments),
-                        "SubViewRatio": round(views / max(subs, 1), 2),
+                        "Engagement%": engagement,
+                        "SubViewRatio": sub_view_ratio,
+                        "AvgViewsPerVideo": round(ch.get("total_views", 0) / max(ch.get("video_count", 1), 1)),
                         "Uploaded": sn["publishedAt"][:10],
                         "ChCreated": ch.get("created", "")[:10] if ch.get("created") else "N/A",
                         "Country": country,
                         "Type": vtype,
                         "Duration": duration,
                         "DurationStr": f"{duration//60}:{duration%60:02d}",
+                        # Upload Schedule Data
+                        "UploadSchedule": schedule_label,
+                        "UploadsPerWeek": upload_data.get("uploads_per_week", "N/A"),
+                        "AvgDaysBetween": upload_data.get("avg_days_between", "N/A"),
+                        "LastUpload": upload_data.get("last_upload", "N/A"),
+                        # Monetization Data
+                        "Monetization": monetization_status,
+                        "MonetizationScore": mon_score,
+                        "MonetizationReasons": " | ".join(mon_reasons),
+                        # Faceless Data
                         "Faceless": "YES" if is_faceless else "MAYBE",
                         "FacelessScore": confidence,
-                        "FacelessReasons": ", ".join(reasons) if reasons else "N/A",
+                        "FacelessReasons": ", ".join(faceless_reasons) if faceless_reasons else "N/A",
+                        # Links
                         "Keyword": kw,
                         "Thumb": sn["thumbnails"]["high"]["url"],
                         "Link": f"https://www.youtube.com/watch?v={vid}",
                         "ChannelLink": f"https://www.youtube.com/channel/{cid}"
                     })
-        
-        stats["keywords_completed"] += 1
     
     progress_bar.empty()
     status_text.empty()
     
-    if quota_exceeded:
-        st.warning(f"⚠️ **API Quota Khatam!** Keywords done: {stats['keywords_completed']}/{len(keywords)} | Results: {stats['final']}")
+    # ------------------------------------------------------------
+    # SHOW STATS
+    # ------------------------------------------------------------
+    st.markdown("### 📊 Search Statistics")
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    col1.metric("Total Searched", stats["total_searched"])
+    col2.metric("Passed Views", stats["passed_views"])
+    col3.metric("Passed Subs", stats["passed_subs"])
+    col4.metric("Passed Age", stats["passed_age"])
+    col5.metric("Passed Faceless", stats["passed_faceless"])
+    col6.metric("Final Results", stats["final"])
     
-    # Stats
-    st.markdown("### 📊 Statistics")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Searched", stats["total_searched"])
-    col2.metric("Keywords Done", f"{stats['keywords_completed']}/{len(keywords)}")
-    col3.metric("Results", stats["final"])
-    
+    # ------------------------------------------------------------
+    # RESULTS
+    # ------------------------------------------------------------
     if not all_results:
-        st.warning("😔 No results found! Try different keywords or adjust filters.")
+        st.warning("😔 Kuch nahi mila! Try karo:")
+        st.markdown("""
+        - **Days** badha do (14 ya 30 days)
+        - **Min Views** kam karo (5000 ya 1000)
+        - **Channel Age** "Any" ya "2023" select karo
+        - **Faceless Strictness** "Relaxed" karo
+        - **Monetization Filter** OFF karo
+        - **More keywords** add karo
+        """)
         st.stop()
     
+    # Create DataFrame
     df = pd.DataFrame(all_results)
-    df = df.sort_values("Views", ascending=False).drop_duplicates(subset="ChannelID", keep="first").reset_index(drop=True)
     
-    st.success(f"🎉 **{len(df)} CHANNELS** found!")
-    if not quota_exceeded:
-        st.balloons()
+    # Remove duplicates (keep highest views per channel)
+    df = df.sort_values("Views", ascending=False)
+    df = df.drop_duplicates(subset="ChannelID", keep="first")
+    df = df.reset_index(drop=True)
     
-    # Video Type Summary
-    st.markdown("### 📹 Results Breakdown")
-    type_counts = df['Type'].value_counts()
-    type_cols = st.columns(3)
-    with type_cols[0]:
-        st.metric("🎬 Shorts", type_counts.get('Shorts', 0))
-    with type_cols[1]:
-        st.metric("📺 Medium", type_counts.get('Medium', 0))
-    with type_cols[2]:
-        st.metric("🎥 Long", type_counts.get('Long', 0))
+    st.success(f"🎉 **{len(df)} FACELESS VIRAL VIDEOS** mil gaye!")
+    st.balloons()
     
-    # Sorting
-    col1, col2 = st.columns(2)
+    # Sorting options
+    st.markdown("### 🎯 Results")
+    col1, col2, col3 = st.columns(3)
     with col1:
-        sort_by = st.selectbox("Sort By", ["Views", "Virality", "Engagement%", "Subs", "TotalVideos", "MonetizationScore", "EstRevenue"])
+        sort_by = st.selectbox("Sort By", ["Views", "Virality", "Engagement%", "Subs", "TotalVideos", "MonetizationScore", "UploadsPerWeek"])
     with col2:
         sort_order = st.selectbox("Order", ["Descending", "Ascending"])
+    with col3:
+        filter_monetization = st.selectbox("Show Monetization", ["All", "Likely Monetized", "Possibly Monetized", "Not Monetized"])
+    
+    # Apply filters
+    if filter_monetization != "All":
+        if filter_monetization == "Likely Monetized":
+            df = df[df["Monetization"].str.contains("Likely")]
+        elif filter_monetization == "Possibly Monetized":
+            df = df[df["Monetization"].str.contains("Possibly")]
+        elif filter_monetization == "Not Monetized":
+            df = df[df["Monetization"].str.contains("Not")]
     
     df = df.sort_values(by=sort_by, ascending=(sort_order == "Ascending"))
     
@@ -1024,80 +950,152 @@ if st.button("🚀 HUNT VIRAL VIDEOS", type="primary", use_container_width=True)
             
             with col1:
                 st.markdown(f"### {r['Title']}")
-                st.markdown(f"**📺 [{r['Channel']}]({r['ChannelLink']})** • 👥 {r['Subs']:,} subs • 🌍 {r['Country']}")
                 
-                # Shorts & Long count display
-                shorts_display = r['ShortsCount'] if r['ShortsCount'] != "N/A" else "?"
-                long_display = r['LongCount'] if r['LongCount'] != "N/A" else "?"
-                st.markdown(f"🎬 **Total: {r['TotalVideos']}** videos | 📱 **Shorts: {shorts_display}** | 🎥 **Long: {long_display}**")
-                st.markdown(f"📅 Created: {r['ChCreated']} • ⏰ {r['UploadSchedule']}")
+                # Channel info with video count
+                st.markdown(
+                    f"**📺 [{r['Channel']}]({r['ChannelLink']})** • "
+                    f"👥 {r['Subs']:,} subs • "
+                    f"🎬 **{r['TotalVideos']:,} videos** • "
+                    f"🌍 {r['Country']} • "
+                    f"📅 Created: {r['ChCreated']}"
+                )
                 
-                if "LIKELY" in r['MonetizationStatus']:
-                    st.success(f"💰 {r['MonetizationStatus']} ({r['MonetizationScore']}%) | Est: ${r['EstRevenue']:,.0f}")
-                elif "POSSIBLY" in r['MonetizationStatus']:
-                    st.info(f"💰 {r['MonetizationStatus']} ({r['MonetizationScore']}%)")
-                else:
-                    st.warning(f"💰 {r['MonetizationStatus']} ({r['MonetizationScore']}%)")
-                
-                col_a, col_b, col_c, col_d = st.columns(4)
+                # Video stats row
+                col_a, col_b, col_c, col_d, col_e = st.columns(5)
                 col_a.metric("👁️ Views", f"{r['Views']:,}")
                 col_b.metric("🔥 Virality", f"{r['Virality']:,}/day")
                 col_c.metric("💬 Engagement", f"{r['Engagement%']}%")
                 col_d.metric("📈 Sub:View", f"{r['SubViewRatio']}x")
+                col_e.metric("📊 Avg Views/Vid", f"{r['AvgViewsPerVideo']:,}")
                 
-                type_emoji = "🎬" if r['Type'] == "Shorts" else "📺" if r['Type'] == "Medium" else "🎥"
-                st.markdown(f"⏱️ {r['DurationStr']} **{type_emoji} {r['Type']}** • 👍 {r['Likes']:,} • 💬 {r['Comments']:,} • 📤 {r['Uploaded']}")
+                # Upload Schedule Section
+                st.markdown("#### 📅 Upload Schedule")
+                col_s1, col_s2, col_s3, col_s4 = st.columns(4)
                 
-                if r['Faceless'] == "YES":
-                    st.success(f"✅ Faceless ({r['FacelessScore']}%)")
+                schedule_color = "🟢" if "Daily" in str(r['UploadSchedule']) else "🟡" if "week" in str(r['UploadSchedule']).lower() else "🔴"
+                col_s1.metric("Schedule", f"{schedule_color} {r['UploadSchedule']}")
+                col_s2.metric("Uploads/Week", r['UploadsPerWeek'] if r['UploadsPerWeek'] else "N/A")
+                col_s3.metric("Avg Days Between", f"{r['AvgDaysBetween']} days" if r['AvgDaysBetween'] else "N/A")
+                col_s4.metric("Last Upload", r['LastUpload'] if r['LastUpload'] else "N/A")
+                
+                # Monetization Section
+                st.markdown("#### 💰 Monetization Status")
+                if "Likely" in r['Monetization']:
+                    st.success(f"**{r['Monetization']}** (Score: {r['MonetizationScore']}/100)")
+                elif "Possibly" in r['Monetization']:
+                    st.warning(f"**{r['Monetization']}** (Score: {r['MonetizationScore']}/100)")
+                elif "Eligible" in r['Monetization']:
+                    st.info(f"**{r['Monetization']}** (Score: {r['MonetizationScore']}/100)")
                 else:
-                    st.info(f"🤔 Maybe Faceless ({r['FacelessScore']}%)")
+                    st.error(f"**{r['Monetization']}** (Score: {r['MonetizationScore']}/100)")
                 
-                st.markdown(f"🔑 `{r['Keyword']}` | [▶️ Watch]({r['Link']})")
+                # Show monetization reasons in expander
+                with st.expander("📋 Monetization Analysis Details"):
+                    reasons = r['MonetizationReasons'].split(" | ")
+                    for reason in reasons:
+                        if "✓" in reason:
+                            st.markdown(f"✅ {reason}")
+                        elif "✗" in reason:
+                            st.markdown(f"❌ {reason}")
+                        else:
+                            st.markdown(f"⚠️ {reason}")
+                
+                # Additional video info
+                st.markdown(
+                    f"⏱️ **Duration:** {r['DurationStr']} ({r['Type']}) • "
+                    f"👍 {r['Likes']:,} likes • "
+                    f"💬 {r['Comments']:,} comments • "
+                    f"📤 Uploaded: {r['Uploaded']}"
+                )
+                
+                # Faceless indicator
+                if r['Faceless'] == "YES":
+                    st.success(f"✅ Faceless Score: {r['FacelessScore']}% | {r['FacelessReasons']}")
+                else:
+                    st.info(f"🤔 Faceless Score: {r['FacelessScore']}% | {r['FacelessReasons']}")
+                
+                st.markdown(f"🔑 Keyword: `{r['Keyword']}`")
+                st.markdown(f"[▶️ Watch Video]({r['Link']})")
             
             with col2:
                 st.image(r["Thumb"], use_container_width=True)
+                
+                # Quick channel stats box
+                st.markdown("---")
+                st.markdown("**📊 Channel Quick Stats**")
+                st.markdown(f"• Total Videos: **{r['TotalVideos']:,}**")
+                st.markdown(f"• Total Views: **{r['TotalViews']:,}**")
+                st.markdown(f"• Upload: **{r['UploadSchedule']}**")
+                st.markdown(f"• Monetized: **{r['Monetization'].split()[0]}**")
     
-    # Download Section
+    # CSV Download
     st.markdown("---")
-    st.markdown("### 📥 Download Results")
     
-    download_cols = st.columns(3)
+    # Summary Stats
+    st.markdown("### 📈 Summary Statistics")
+    col1, col2, col3, col4 = st.columns(4)
     
-    with download_cols[0]:
-        csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            "📥 CSV",
-            data=csv,
-            file_name=f"viral_channels_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv",
-            use_container_width=True
+    monetized_count = len(df[df["Monetization"].str.contains("Likely")])
+    daily_uploaders = len(df[df["UploadSchedule"].str.contains("Daily", na=False)])
+    avg_videos = df["TotalVideos"].mean()
+    
+    col1.metric("Likely Monetized", f"{monetized_count}/{len(df)}")
+    col2.metric("Daily Uploaders", daily_uploaders)
+    col3.metric("Avg Videos/Channel", f"{avg_videos:.0f}")
+    col4.metric("Total Channels", len(df))
+    
+    csv = df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        "📥 Download Full Results (CSV)",
+        data=csv,
+        file_name=f"faceless_viral_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
+    
+    # Excel-like view with new columns
+    with st.expander("📋 View All Data (Table Format)"):
+        st.dataframe(
+            df[["Title", "Channel", "Views", "Virality", "Subs", "TotalVideos", 
+                "UploadSchedule", "UploadsPerWeek", "Monetization", "MonetizationScore",
+                "Country", "Type", "Faceless", "FacelessScore"]],
+            use_container_width=True,
+            height=500
         )
-    
-    with download_cols[1]:
-        html_report = generate_html_report(df, stats, quota_exceeded)
-        st.download_button(
-            "📥 HTML Report",
-            data=html_report,
-            file_name=f"viral_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
-            mime="text/html",
-            use_container_width=True
-        )
-    
-    with download_cols[2]:
-        json_data = df.to_json(orient='records', indent=2)
-        st.download_button(
-            "📥 JSON",
-            data=json_data,
-            file_name=f"viral_channels_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-            mime="application/json",
-            use_container_width=True
-        )
-    
-    # Table View
-    with st.expander("📋 View Table"):
-        st.dataframe(df[["Title", "Channel", "Views", "Virality", "Subs", "TotalVideos", "ShortsCount", "LongCount", "Type", "MonetizationScore", "Country", "Faceless"]], use_container_width=True, height=400)
 
-# Footer
+# ------------------------------------------------------------
+# FOOTER
+# ------------------------------------------------------------
 st.markdown("---")
 st.caption("Made with ❤️ for Muhammed Rizwan Qamar | Faceless Viral Hunter PRO 2025")
+```
+
+## 🆕 New Features Added:
+
+| Feature | Description |
+|---------|-------------|
+| **📊 Total Videos** | Channel py kitni videos hain |
+| **📅 Upload Schedule** | Daily, Weekly, Monthly upload pattern |
+| **⏰ Uploads/Week** | Average uploads per week |
+| **📆 Avg Days Between** | Average gap between uploads |
+| **🕐 Last Upload** | Last video kab upload hui |
+| **💰 Monetization Status** | Likely, Possibly, Eligible, Not Monetized |
+| **📈 Monetization Score** | 0-100 confidence score |
+| **📋 Monetization Reasons** | Detailed breakdown (subs, watch hours, age, etc.) |
+
+## 💰 Monetization Detection Logic:
+
+```
+✅ 1000+ Subscribers = +30 points
+✅ 4000+ Est. Watch Hours = +25 points
+✅ 30+ Days Old = +15 points
+✅ 50+ Videos = +10 points
+✅ Active Uploads = +10 points
+✅ Premium Country = +5 points
+✅ High Avg Views = +10 points
+
+Score 70+ = Likely Monetized ✅
+Score 50-69 = Possibly Monetized 🟡
+Score 30-49 = Eligible Soon 🟠
+Score <30 = Not Monetized ❌
+```
