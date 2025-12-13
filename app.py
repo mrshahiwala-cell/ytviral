@@ -21,20 +21,41 @@ VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
 CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels"
 
 # ------------------------------------------------------------
-# API QUOTA TRACKING
+# API QUOTA TRACKING - IMPROVED
 # ------------------------------------------------------------
 if 'api_calls' not in st.session_state:
     st.session_state['api_calls'] = 0
 if 'quota_used' not in st.session_state:
     st.session_state['quota_used'] = 0
+if 'last_reset' not in st.session_state:
+    st.session_state['last_reset'] = datetime.now().date()
+if 'search_history' not in st.session_state:
+    st.session_state['search_history'] = []
+if 'cached_results' not in st.session_state:
+    st.session_state['cached_results'] = {}
 
 # YouTube API Quota Costs
 QUOTA_COSTS = {
-    'search': 100,
+    'search': 100,  # Most expensive!
     'videos': 1,
     'channels': 1
 }
 DAILY_QUOTA_LIMIT = 10000  # YouTube default daily quota
+QUOTA_SAFETY_BUFFER = 500  # Reserve some quota
+
+# Reset quota at midnight (Pacific Time - YouTube resets at midnight PT)
+def check_quota_reset():
+    """Check if quota should be reset (new day)"""
+    today = datetime.now().date()
+    if st.session_state['last_reset'] < today:
+        st.session_state['quota_used'] = 0
+        st.session_state['api_calls'] = 0
+        st.session_state['last_reset'] = today
+        st.session_state['search_history'] = []
+        return True
+    return False
+
+check_quota_reset()
 
 # ------------------------------------------------------------
 # TOP 10 PREMIUM CPM COUNTRIES (Fixed)
@@ -84,6 +105,138 @@ CPM_RATES = {
     'KR': 2.0, 'SG': 2.5, 'HK': 2.0, 'IN': 0.5, 'BR': 0.8,
     'MX': 0.7, 'PH': 0.3, 'ID': 0.4, 'PK': 0.3, 'N/A': 1.0
 }
+
+
+# ------------------------------------------------------------
+# QUOTA CALCULATOR - NEW!
+# ------------------------------------------------------------
+def calculate_required_quota(keywords, regions, search_orders, use_pagination=True):
+    """Calculate how much quota will be needed for the search"""
+    
+    # Search calls
+    search_calls = len(keywords) * len(regions) * len(search_orders)
+    if use_pagination:
+        search_calls *= 2  # pagination doubles search calls
+    
+    search_quota = search_calls * QUOTA_COSTS['search']
+    
+    # Estimate video/channel API calls (approximately 1 per search)
+    video_quota = search_calls * 2  # videos.list calls
+    channel_quota = search_calls * 1  # channels.list calls
+    
+    total_quota = search_quota + video_quota + channel_quota
+    
+    return {
+        'search_calls': search_calls,
+        'search_quota': search_quota,
+        'video_quota': video_quota,
+        'channel_quota': channel_quota,
+        'total_quota': total_quota
+    }
+
+
+def get_available_quota():
+    """Get available quota"""
+    return DAILY_QUOTA_LIMIT - st.session_state['quota_used'] - QUOTA_SAFETY_BUFFER
+
+
+def can_afford_search(required_quota):
+    """Check if we have enough quota"""
+    available = get_available_quota()
+    return available >= required_quota
+
+
+def get_smart_search_config(keywords, regions, search_orders, available_quota):
+    """
+    Intelligently reduce search scope to fit within quota
+    Returns optimized config
+    """
+    base_quota_per_combo = QUOTA_COSTS['search'] * (2 if True else 1)  # with pagination
+    extra_per_combo = 5  # videos + channels API
+    
+    quota_per_combo = base_quota_per_combo + extra_per_combo
+    
+    max_combos = available_quota // quota_per_combo
+    current_combos = len(keywords) * len(regions) * len(search_orders)
+    
+    if current_combos <= max_combos:
+        return {
+            'keywords': keywords,
+            'regions': regions,
+            'orders': search_orders,
+            'use_pagination': True,
+            'reduced': False
+        }
+    
+    # Need to reduce - prioritize keywords, then orders, then regions
+    recommendations = []
+    
+    # Option 1: Reduce regions (top 3 only)
+    reduced_regions = regions[:3]
+    opt1_combos = len(keywords) * len(reduced_regions) * len(search_orders)
+    if opt1_combos <= max_combos:
+        recommendations.append({
+            'keywords': keywords,
+            'regions': reduced_regions,
+            'orders': search_orders,
+            'use_pagination': True,
+            'reduced': True,
+            'reduction': f"Regions: {len(regions)} → {len(reduced_regions)}"
+        })
+    
+    # Option 2: Single search order
+    opt2_combos = len(keywords) * len(regions) * 1
+    if opt2_combos <= max_combos:
+        recommendations.append({
+            'keywords': keywords,
+            'regions': regions,
+            'orders': [search_orders[0]],
+            'use_pagination': True,
+            'reduced': True,
+            'reduction': f"Orders: {len(search_orders)} → 1"
+        })
+    
+    # Option 3: Reduce everything
+    reduced_kw = keywords[:3]
+    reduced_reg = regions[:3]
+    reduced_ord = [search_orders[0]]
+    opt3_combos = len(reduced_kw) * len(reduced_reg) * len(reduced_ord)
+    if opt3_combos <= max_combos:
+        recommendations.append({
+            'keywords': reduced_kw,
+            'regions': reduced_reg,
+            'orders': reduced_ord,
+            'use_pagination': True,
+            'reduced': True,
+            'reduction': f"Keywords: {len(keywords)}→{len(reduced_kw)}, Regions: {len(regions)}→{len(reduced_reg)}, Orders: {len(search_orders)}→1"
+        })
+    
+    # Option 4: No pagination
+    opt4_combos = len(keywords) * len(regions) * len(search_orders)
+    opt4_quota = opt4_combos * (QUOTA_COSTS['search'] + 5)  # no pagination
+    if opt4_quota <= available_quota:
+        recommendations.append({
+            'keywords': keywords,
+            'regions': regions,
+            'orders': search_orders,
+            'use_pagination': False,
+            'reduced': True,
+            'reduction': "Pagination disabled"
+        })
+    
+    # Return best option or minimal safe config
+    if recommendations:
+        return recommendations[0]
+    
+    # Absolute minimum
+    return {
+        'keywords': keywords[:1],
+        'regions': regions[:2],
+        'orders': [search_orders[0]],
+        'use_pagination': False,
+        'reduced': True,
+        'reduction': "Minimal safe mode"
+    }
 
 
 # ------------------------------------------------------------
@@ -350,16 +503,23 @@ def generate_html_report(df, stats, quota_exceeded=False):
 # HELPER FUNCTIONS
 # ------------------------------------------------------------
 def fetch_json(url, params, retries=2, api_type='search'):
-    """Fetch JSON with quota tracking"""
+    """Fetch JSON with quota tracking and pre-check"""
+    
+    # Pre-check quota
+    required = QUOTA_COSTS.get(api_type, 1)
+    if st.session_state['quota_used'] + required > DAILY_QUOTA_LIMIT:
+        return "QUOTA"
+    
     for attempt in range(retries):
         try:
             resp = requests.get(url, params=params, timeout=30)
             if resp.status_code == 200:
                 # Track API quota usage
                 st.session_state['api_calls'] += 1
-                st.session_state['quota_used'] += QUOTA_COSTS.get(api_type, 1)
+                st.session_state['quota_used'] += required
                 return resp.json()
             if "quotaExceeded" in resp.text or resp.status_code == 403:
+                st.session_state['quota_used'] = DAILY_QUOTA_LIMIT  # Mark as exhausted
                 return "QUOTA"
         except:
             if attempt < retries - 1:
@@ -565,6 +725,11 @@ def batch_fetch_channels(channel_ids, api_key, cache):
     
     for i in range(0, len(new_ids), 50):
         batch = new_ids[i:i+50]
+        
+        # Pre-check quota
+        if st.session_state['quota_used'] + QUOTA_COSTS['channels'] > DAILY_QUOTA_LIMIT:
+            return cache, True
+        
         params = {
             "part": "snippet,statistics,brandingSettings,status",
             "id": ",".join(batch),
@@ -572,7 +737,7 @@ def batch_fetch_channels(channel_ids, api_key, cache):
         }
         data = fetch_json(CHANNELS_URL, params, api_type='channels')
         if data == "QUOTA":
-            return cache, True  # Return what we have + quota flag
+            return cache, True
         if not data:
             continue
         
@@ -603,6 +768,10 @@ def search_videos_with_pagination(keyword, params, api_key, max_pages=2):
     next_token = None
     
     for page in range(max_pages):
+        # Pre-check quota before each search
+        if st.session_state['quota_used'] + QUOTA_COSTS['search'] > DAILY_QUOTA_LIMIT:
+            return all_items, True
+        
         search_params = params.copy()
         search_params["key"] = api_key
         if next_token:
@@ -610,7 +779,7 @@ def search_videos_with_pagination(keyword, params, api_key, max_pages=2):
         
         data = fetch_json(SEARCH_URL, search_params, api_type='search')
         if data == "QUOTA":
-            return all_items, True  # Return what we have + quota flag
+            return all_items, True
         if not data:
             break
         
@@ -627,32 +796,47 @@ def search_videos_with_pagination(keyword, params, api_key, max_pages=2):
 # ------------------------------------------------------------
 st.sidebar.header("⚙️ Settings")
 
-# API Quota Display
-st.sidebar.markdown("### 📊 API Quota Usage")
+# API Quota Display - IMPROVED
+st.sidebar.markdown("### 📊 API Quota Status")
 quota_percentage = (st.session_state['quota_used'] / DAILY_QUOTA_LIMIT) * 100
-quota_remaining = DAILY_QUOTA_LIMIT - st.session_state['quota_used']
+quota_remaining = get_available_quota()
 
 # Color coding based on usage
 if quota_percentage < 50:
     quota_color = "🟢"
+    quota_status = "Healthy"
 elif quota_percentage < 80:
     quota_color = "🟡"
+    quota_status = "Moderate"
 else:
     quota_color = "🔴"
+    quota_status = "Critical"
 
 st.sidebar.markdown(f"""
-{quota_color} **Used:** {st.session_state['quota_used']:,} / {DAILY_QUOTA_LIMIT:,} ({quota_percentage:.1f}%)
+{quota_color} **Status:** {quota_status}
 
-📈 **Remaining:** {quota_remaining:,} units
+📊 **Used:** {st.session_state['quota_used']:,} / {DAILY_QUOTA_LIMIT:,}
+
+📈 **Available:** {quota_remaining:,} units
 
 🔄 **API Calls:** {st.session_state['api_calls']}
+
+🔍 **Max Searches Left:** ~{quota_remaining // QUOTA_COSTS['search']}
 """)
 
 st.sidebar.progress(min(quota_percentage / 100, 1.0))
 
-if quota_percentage >= 80:
-    st.sidebar.warning("⚠️ Quota almost exhausted!")
-    
+if quota_percentage >= 90:
+    st.sidebar.error("🚨 Quota almost exhausted! Wait until tomorrow.")
+elif quota_percentage >= 70:
+    st.sidebar.warning("⚠️ Quota running low! Use fewer keywords/regions.")
+
+# Reset button
+if st.sidebar.button("🔄 Reset Quota Counter"):
+    st.session_state['quota_used'] = 0
+    st.session_state['api_calls'] = 0
+    st.rerun()
+
 st.sidebar.markdown("---")
 
 with st.sidebar.expander("📅 Time Filters", expanded=True):
@@ -686,46 +870,135 @@ with st.sidebar.expander("💰 Monetization", expanded=False):
     monetized_only = st.checkbox("Only Likely Monetized", value=False)
     min_upload_frequency = st.slider("Min Uploads/Week", 0, 14, 0)
 
-with st.sidebar.expander("🌍 Region (Top 10 Premium CPM)", expanded=False):
+with st.sidebar.expander("🌍 Region Selection", expanded=False):
     premium_only = st.checkbox("Only Premium CPM Countries", value=False)
-    st.markdown("**🏆 Top 10 Premium CPM Countries (Fixed):**")
-    st.markdown("US, AU, NO, CH, CA, GB, DE, LU, SE, NL")
-    # Fixed search regions - Top 10 Premium Countries
-    search_regions = TOP_10_PREMIUM_COUNTRIES
+    
+    st.markdown("**Select Regions to Search:**")
+    
+    # Quick selection buttons
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Top 3 Only", use_container_width=True):
+            st.session_state['selected_regions'] = TOP_10_PREMIUM_COUNTRIES[:3]
+    with col2:
+        if st.button("Top 5 Only", use_container_width=True):
+            st.session_state['selected_regions'] = TOP_10_PREMIUM_COUNTRIES[:5]
+    
+    if 'selected_regions' not in st.session_state:
+        st.session_state['selected_regions'] = TOP_10_PREMIUM_COUNTRIES[:3]  # Default to top 3
+    
+    search_regions = st.multiselect(
+        "Regions",
+        TOP_10_PREMIUM_COUNTRIES,
+        default=st.session_state['selected_regions'],
+        help="Fewer regions = Less quota usage"
+    )
 
-with st.sidebar.expander("🔍 Search", expanded=False):
-    search_orders = st.multiselect("Search Order", ["viewCount", "relevance", "date", "rating"], default=["viewCount", "relevance"])
-    use_pagination = st.checkbox("Use Pagination", value=True)
+with st.sidebar.expander("🔍 Search Options", expanded=False):
+    search_orders = st.multiselect(
+        "Search Order", 
+        ["viewCount", "relevance", "date", "rating"], 
+        default=["viewCount"],  # Default to 1 only
+        help="Fewer orders = Less quota usage"
+    )
+    use_pagination = st.checkbox("Use Pagination (2x quota)", value=False)  # Default OFF
+    
+    # Quota saving mode
+    quota_save_mode = st.checkbox("🛡️ Quota Saving Mode", value=True, help="Automatically limits search scope")
 
 
 # ------------------------------------------------------------
-# KEYWORDS (Limited to 5)
+# KEYWORDS INPUT
 # ------------------------------------------------------------
-st.markdown("### 🔑 Keywords (Maximum 5)")
+st.markdown("### 🔑 Keywords")
 
 default_keywords = """reddit stories
 true horror stories
-motivation
-top 10 facts
-true crime"""
+motivation"""
 
-keyword_input = st.text_area("Enter Keywords (One per line, Max 5)", height=150, value=default_keywords)
+keyword_input = st.text_area("Enter Keywords (One per line, Max 3 recommended)", height=100, value=default_keywords)
 
-# Show keyword count
 keywords_list = [kw.strip() for line in keyword_input.splitlines() for kw in line.split(",") if kw.strip()]
 keywords_count = len(keywords_list)
 
-if keywords_count > 5:
-    st.error(f"⚠️ Maximum 5 keywords allowed! You have {keywords_count}. Pehle 5 keywords use honge.")
-elif keywords_count == 0:
-    st.warning("⚠️ Koi keyword nahi dala!")
-else:
-    st.info(f"✅ {keywords_count}/5 keywords selected")
-
-# Show fixed regions info
+# ------------------------------------------------------------
+# QUOTA PREVIEW - NEW!
+# ------------------------------------------------------------
 st.markdown("---")
-st.markdown("### 🌍 Search Regions (Fixed - Top 10 Premium CPM)")
-st.success("🏆 **US, AU, NO, CH, CA, GB, DE, LU, SE, NL** - These 10 premium CPM countries are used for searching.")
+st.markdown("### 📊 Quota Preview")
+
+# Calculate quota before search
+preview_keywords = list(dict.fromkeys(keywords_list))[:5]
+preview_regions = search_regions if search_regions else TOP_10_PREMIUM_COUNTRIES[:3]
+preview_orders = search_orders if search_orders else ["viewCount"]
+
+quota_estimate = calculate_required_quota(
+    preview_keywords, 
+    preview_regions, 
+    preview_orders, 
+    use_pagination
+)
+
+available = get_available_quota()
+can_afford = can_afford_search(quota_estimate['total_quota'])
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.metric("🔍 Search Calls", quota_estimate['search_calls'])
+    st.caption(f"= {quota_estimate['search_quota']:,} quota units")
+
+with col2:
+    st.metric("📊 Total Quota Needed", f"{quota_estimate['total_quota']:,}")
+    
+with col3:
+    if can_afford:
+        st.metric("✅ Available", f"{available:,}")
+        st.success("Enough quota!")
+    else:
+        st.metric("❌ Available", f"{available:,}")
+        st.error("Not enough quota!")
+
+# Show breakdown
+with st.expander("📋 Quota Breakdown"):
+    st.markdown(f"""
+    | Component | Calls | Cost Each | Total |
+    |-----------|-------|-----------|-------|
+    | Search API | {quota_estimate['search_calls']} | 100 | {quota_estimate['search_quota']:,} |
+    | Videos API | ~{quota_estimate['search_calls']} | 1 | ~{quota_estimate['video_quota']} |
+    | Channels API | ~{quota_estimate['search_calls']} | 1 | ~{quota_estimate['channel_quota']} |
+    | **TOTAL** | | | **{quota_estimate['total_quota']:,}** |
+    
+    ---
+    
+    **Current Settings:**
+    - Keywords: {len(preview_keywords)} ({', '.join(preview_keywords[:3])}...)
+    - Regions: {len(preview_regions)} ({', '.join(preview_regions[:3])}...)
+    - Orders: {len(preview_orders)} ({', '.join(preview_orders)})
+    - Pagination: {'ON (2x searches)' if use_pagination else 'OFF'}
+    """)
+
+# Show recommendations if quota is low
+if not can_afford:
+    st.warning("⚠️ Quota kafi nahi hai! Neeche recommendations dekho:")
+    
+    smart_config = get_smart_search_config(
+        preview_keywords, 
+        preview_regions, 
+        preview_orders, 
+        available
+    )
+    
+    if smart_config['reduced']:
+        st.info(f"""
+        **🛡️ Recommended Settings:**
+        - Keywords: {len(smart_config['keywords'])} ({', '.join(smart_config['keywords'])})
+        - Regions: {len(smart_config['regions'])} ({', '.join(smart_config['regions'])})
+        - Orders: {len(smart_config['orders'])} ({', '.join(smart_config['orders'])})
+        - Pagination: {'ON' if smart_config['use_pagination'] else 'OFF'}
+        
+        📌 Change: {smart_config['reduction']}
+        """)
 
 
 # ------------------------------------------------------------
@@ -737,48 +1010,85 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
         st.error("⚠️ Keywords daal do!")
         st.stop()
     
-    # Parse keywords and limit to 5
     keywords = list(dict.fromkeys([kw.strip() for line in keyword_input.splitlines() for kw in line.split(",") if kw.strip()]))[:5]
     
     if len(keywords) == 0:
         st.error("⚠️ Koi valid keyword nahi mila!")
         st.stop()
     
-    st.info(f"🔍 Searching with {len(keywords)} keywords in {len(search_regions)} premium countries")
+    if not search_regions:
+        search_regions = TOP_10_PREMIUM_COUNTRIES[:3]
+    
+    if not search_orders:
+        search_orders = ["viewCount"]
+    
+    # Check quota availability
+    quota_estimate = calculate_required_quota(keywords, search_regions, search_orders, use_pagination)
+    available = get_available_quota()
+    
+    # Apply quota saving mode if enabled
+    final_keywords = keywords
+    final_regions = search_regions
+    final_orders = search_orders
+    final_pagination = use_pagination
+    
+    if quota_save_mode and not can_afford_search(quota_estimate['total_quota']):
+        smart_config = get_smart_search_config(keywords, search_regions, search_orders, available)
+        final_keywords = smart_config['keywords']
+        final_regions = smart_config['regions']
+        final_orders = smart_config['orders']
+        final_pagination = smart_config['use_pagination']
+        
+        st.warning(f"""
+        🛡️ **Quota Saving Mode Active!**
+        
+        Original: {len(keywords)} keywords × {len(search_regions)} regions × {len(search_orders)} orders
+        
+        Reduced to: {len(final_keywords)} keywords × {len(final_regions)} regions × {len(final_orders)} orders
+        
+        📌 {smart_config['reduction']}
+        """)
+    
+    st.info(f"🔍 Searching: {len(final_keywords)} keywords × {len(final_regions)} regions × {len(final_orders)} orders")
     
     all_results = []
     channel_cache = {}
     seen_videos = set()
-    seen_channels = set()  # Track channels to avoid duplicates
-    quota_exceeded = False  # Track quota status
+    seen_channels = set()
+    quota_exceeded = False
     
     published_after = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     
-    total_ops = len(keywords) * len(search_orders) * len(search_regions)
+    total_ops = len(final_keywords) * len(final_orders) * len(final_regions)
     current_op = 0
     
     progress_bar = st.progress(0)
     status_text = st.empty()
-    quota_warning = st.empty()  # Placeholder for quota warning
+    quota_display = st.empty()
     
     stats = {"total_searched": 0, "final": 0, "keywords_completed": 0, "duplicates_skipped": 0}
     
-    # Main search loop with quota handling
-    for kw in keywords:
+    for kw in final_keywords:
         if quota_exceeded:
             break
             
-        for order in search_orders:
+        for order in final_orders:
             if quota_exceeded:
                 break
                 
-            for region in search_regions:
+            for region in final_regions:
                 if quota_exceeded:
+                    break
+                
+                # Pre-check quota before each search
+                if st.session_state['quota_used'] + QUOTA_COSTS['search'] > DAILY_QUOTA_LIMIT - QUOTA_SAFETY_BUFFER:
+                    quota_exceeded = True
                     break
                     
                 current_op += 1
                 progress_bar.progress(current_op / total_ops)
-                status_text.markdown(f"🔍 `{kw}` | {order} | {region} | Quota: {st.session_state['quota_used']}/{DAILY_QUOTA_LIMIT}")
+                status_text.markdown(f"🔍 `{kw}` | {order} | {region}")
+                quota_display.markdown(f"📊 Quota: {st.session_state['quota_used']:,} / {DAILY_QUOTA_LIMIT:,} ({(st.session_state['quota_used']/DAILY_QUOTA_LIMIT)*100:.1f}%)")
                 
                 search_params = {
                     "part": "snippet", "q": kw, "type": "video", "order": order,
@@ -786,16 +1096,14 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                     "regionCode": region, "relevanceLanguage": "en", "safeSearch": "none"
                 }
                 
-                if use_pagination:
+                if final_pagination:
                     items, quota_hit = search_videos_with_pagination(kw, search_params, API_KEY, 2)
                     if quota_hit:
                         quota_exceeded = True
-                        quota_warning.warning("⚠️ API Quota khatam ho gaya! Jo results mil chuke hain wo show ho rahe hain...")
                 else:
                     data = fetch_json(SEARCH_URL, {**search_params, "key": API_KEY}, api_type='search')
                     if data == "QUOTA":
                         quota_exceeded = True
-                        quota_warning.warning("⚠️ API Quota khatam ho gaya! Jo results mil chuke hain wo show ho rahe hain...")
                         items = []
                     else:
                         items = data.get("items", []) if data else []
@@ -805,7 +1113,7 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                 
                 stats["total_searched"] += len(items)
                 
-                # Filter out duplicate videos AND duplicate channels
+                # Filter duplicates
                 new_items = []
                 for item in items:
                     vid = item.get("id", {}).get("videoId")
@@ -814,11 +1122,9 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                     if not vid or not cid:
                         continue
                     
-                    # Skip if video already seen
                     if vid in seen_videos:
                         continue
                     
-                    # Skip if channel already seen (only 1 video per channel)
                     if cid in seen_channels:
                         stats["duplicates_skipped"] += 1
                         continue
@@ -841,7 +1147,6 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                     vid_data = fetch_json(VIDEOS_URL, {"part": "statistics,contentDetails", "id": ",".join(batch), "key": API_KEY}, api_type='videos')
                     if vid_data == "QUOTA":
                         quota_exceeded = True
-                        quota_warning.warning("⚠️ API Quota khatam ho gaya! Jo results mil chuke hain wo show ho rahe hain...")
                         break
                     if vid_data:
                         for v in vid_data.get("items", []):
@@ -858,22 +1163,19 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                     channel_cache, quota_hit = batch_fetch_channels(channel_ids, API_KEY, channel_cache)
                     if quota_hit:
                         quota_exceeded = True
-                        quota_warning.warning("⚠️ API Quota khatam ho gaya! Jo results mil chuke hain wo show ho rahe hain...")
                 
-                # Process videos (even with partial data)
+                # Process videos
                 for item in new_items:
                     sn = item["snippet"]
                     vid = item["id"]["videoId"]
                     cid = sn["channelId"]
                     
-                    # Skip if channel already added (double check)
                     if cid in seen_channels:
                         continue
                     
                     v_stats = video_stats.get(vid, {})
                     ch = channel_cache.get(cid, {})
                     
-                    # Skip if no video stats (quota hit before we could fetch)
                     if not v_stats:
                         continue
                     
@@ -885,13 +1187,12 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                     total_videos = ch.get("video_count", 0)
                     total_channel_views = ch.get("total_views", 0)
                     
-                    # Filters
+                    # Apply filters
                     if views < min_views or (max_views > 0 and views > max_views):
                         continue
                     if not (min_subs <= subs <= max_subs):
                         continue
                     
-                    # Channel video count filter
                     if total_videos < min_channel_videos:
                         continue
                     if max_channel_videos > 0 and total_videos > max_channel_videos:
@@ -936,7 +1237,6 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
                     est_revenue, monthly_revenue = estimate_revenue(total_channel_views, country, total_videos)
                     niche = detect_niche(sn["title"], sn["channelTitle"], kw)
                     
-                    # Mark channel as seen AFTER all filters pass
                     seen_channels.add(cid)
                     stats["final"] += 1
                     
@@ -981,45 +1281,47 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
     
     progress_bar.empty()
     status_text.empty()
+    quota_display.empty()
     
-    # Show quota warning if exceeded
+    # Final quota status
+    st.markdown("### 📊 Final Quota Status")
+    final_quota_pct = (st.session_state['quota_used'] / DAILY_QUOTA_LIMIT) * 100
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Quota Used", f"{st.session_state['quota_used']:,}")
+    col2.metric("Remaining", f"{DAILY_QUOTA_LIMIT - st.session_state['quota_used']:,}")
+    col3.metric("Usage", f"{final_quota_pct:.1f}%")
+    
     if quota_exceeded:
         st.warning(f"""
-        ⚠️ **API Quota Khatam Ho Gaya!**
+        ⚠️ **Quota Limit Reached!**
         
-        - ✅ Keywords completed: **{stats['keywords_completed']}/{len(keywords)}**
-        - ✅ Videos searched: **{stats['total_searched']}**
-        - ✅ Results found: **{stats['final']}**
-        - 🔄 Duplicates skipped: **{stats['duplicates_skipped']}**
-        - 📊 Quota Used: **{st.session_state['quota_used']}/{DAILY_QUOTA_LIMIT}**
+        - ✅ Keywords completed: {stats['keywords_completed']}/{len(final_keywords)}
+        - ✅ Videos searched: {stats['total_searched']}
+        - ✅ Channels found: {stats['final']}
         
-        📌 Jo results mil chuke hain wo neeche show ho rahe hain. Quota midnight Pacific Time pe reset hota hai.
+        📌 Partial results neeche hain. Quota midnight Pacific Time pe reset hoga.
         """)
     
     # Stats
-    st.markdown("### 📊 Statistics")
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Total Searched", stats["total_searched"])
-    col2.metric("Keywords Done", f"{stats['keywords_completed']}/{len(keywords)}")
-    col3.metric("Unique Channels", stats["final"])
+    st.markdown("### 📊 Search Statistics")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Videos Searched", stats["total_searched"])
+    col2.metric("Keywords Done", f"{stats['keywords_completed']}/{len(final_keywords)}")
+    col3.metric("Channels Found", stats["final"])
     col4.metric("Duplicates Skipped", stats["duplicates_skipped"])
-    col5.metric("Quota Used", f"{st.session_state['quota_used']:,}")
     
-    # Show results if any
     if not all_results:
-        st.warning("😔 Koi result nahi mila! Filters adjust karo ya kal phir try karo.")
+        st.warning("😔 Koi result nahi mila! Filters adjust karo ya baad mein try karo.")
         st.stop()
     
     df = pd.DataFrame(all_results)
     df = df.sort_values("Views", ascending=False).reset_index(drop=True)
     
-    if quota_exceeded:
-        st.success(f"🎉 **{len(df)} UNIQUE CHANNELS** (No duplicates - Quota limit tak jo mile)")
-    else:
-        st.success(f"🎉 **{len(df)} UNIQUE FACELESS CHANNELS** found! (1 video per channel)")
+    st.success(f"🎉 **{len(df)} UNIQUE CHANNELS** found!")
+    if not quota_exceeded:
         st.balloons()
     
-    # Store in session state
+    # Store results
     st.session_state['results_df'] = df
     st.session_state['stats'] = stats
     st.session_state['quota_exceeded'] = quota_exceeded
@@ -1069,18 +1371,12 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
             with col2:
                 st.image(r["Thumb"], use_container_width=True)
     
-    # ------------------------------------------------------------
-    # DOWNLOAD SECTION
-    # ------------------------------------------------------------
+    # Download section
     st.markdown("---")
     st.markdown("### 📥 Download Results")
     
-    if quota_exceeded:
-        st.info("📌 Ye partial results hain - quota khatam hone se pehle jo mile.")
-    
     download_cols = st.columns(3)
     
-    # CSV Download
     with download_cols[0]:
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button(
@@ -1091,7 +1387,6 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
             use_container_width=True
         )
     
-    # HTML Report Download
     with download_cols[1]:
         html_report = generate_html_report(df, stats, quota_exceeded)
         st.download_button(
@@ -1102,7 +1397,6 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
             use_container_width=True
         )
     
-    # JSON Download
     with download_cols[2]:
         json_data = df.to_json(orient='records', indent=2)
         st.download_button(
@@ -1113,7 +1407,6 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
             use_container_width=True
         )
     
-    # Table View
     with st.expander("📋 View Table"):
         st.dataframe(df[["Title", "Channel", "Views", "Virality", "Subs", "TotalVideos", "MonetizationScore", "Niche", "Country", "Faceless"]], use_container_width=True, height=400)
 
