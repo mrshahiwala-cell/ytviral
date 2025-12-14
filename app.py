@@ -63,6 +63,101 @@ check_quota_reset()
 TOP_10_PREMIUM_COUNTRIES = ['US', 'AU', 'NO', 'CH', 'CA', 'GB', 'DE', 'LU', 'SE', 'NL']
 
 # ------------------------------------------------------------
+# KEYWORD VARIATION GENERATOR - NEW!
+# ------------------------------------------------------------
+def generate_keyword_variations(keyword):
+    """
+    Generate variations of a keyword for better search coverage
+    Example: "reddit stories" -> ["reddit stories", "redditstories", "reddit story"]
+    """
+    variations = set()
+    keyword = keyword.strip().lower()
+    
+    # Original keyword
+    variations.add(keyword)
+    
+    # Without spaces
+    no_space = keyword.replace(" ", "")
+    if no_space != keyword:
+        variations.add(no_space)
+    
+    # With underscores
+    with_underscore = keyword.replace(" ", "_")
+    if with_underscore != keyword:
+        variations.add(with_underscore)
+    
+    # Singular/Plural variations
+    words = keyword.split()
+    if len(words) >= 1:
+        new_words = []
+        for word in words:
+            # Handle common plural -> singular
+            if word.endswith("ies"):
+                new_words.append(word[:-3] + "y")  # stories -> story
+            elif word.endswith("es") and len(word) > 3:
+                new_words.append(word[:-2])  # watches -> watch
+            elif word.endswith("s") and len(word) > 2:
+                new_words.append(word[:-1])  # videos -> video
+            else:
+                new_words.append(word)
+        singular_version = " ".join(new_words)
+        if singular_version != keyword:
+            variations.add(singular_version)
+        
+        # Singular without spaces
+        singular_no_space = singular_version.replace(" ", "")
+        if singular_no_space not in variations:
+            variations.add(singular_no_space)
+    
+    # Handle specific common patterns
+    replacements = {
+        "reddit stories": ["reddit story", "redditstories", "redditstory", "r/stories"],
+        "horror stories": ["horror story", "horrorstories", "horrorstory", "scary stories"],
+        "true stories": ["true story", "truestories", "truestory", "real stories"],
+        "scary stories": ["scary story", "scarystories", "scarystory", "creepy stories"],
+        "motivation": ["motivational", "motivation speech", "motivational speech"],
+        "stoic": ["stoicism", "stoic wisdom", "stoic quotes"],
+        "top 10": ["top10", "top 5", "top5", "top ten"],
+        "aita": ["am i the", "am i the a", "amithe"],
+        "true crime": ["truecrime", "crime stories", "crime story"],
+        "facts": ["amazing facts", "interesting facts", "fun facts"],
+    }
+    
+    for pattern, alts in replacements.items():
+        if pattern in keyword:
+            for alt in alts:
+                variations.add(keyword.replace(pattern, alt))
+    
+    # Add with quotes for exact match (YouTube supports this)
+    if " " in keyword:
+        variations.add(f'"{keyword}"')
+    
+    return list(variations)
+
+
+def expand_keywords_with_variations(keywords_list, max_variations_per_keyword=3):
+    """
+    Expand a list of keywords with their variations
+    Returns list of unique keywords
+    """
+    expanded = []
+    seen = set()
+    
+    for kw in keywords_list:
+        variations = generate_keyword_variations(kw)
+        
+        # Take only max_variations_per_keyword
+        count = 0
+        for var in variations:
+            if var not in seen and count < max_variations_per_keyword:
+                expanded.append(var)
+                seen.add(var)
+                count += 1
+    
+    return expanded
+
+
+# ------------------------------------------------------------
 # FACELESS DETECTION KEYWORDS
 # ------------------------------------------------------------
 FACELESS_INDICATORS = [
@@ -849,12 +944,14 @@ with st.sidebar.expander("📊 View Filters", expanded=True):
     min_virality = st.slider("Min Virality (Views/Day)", 0, 10000, 500)
 
 with st.sidebar.expander("👥 Subscriber Filters", expanded=True):
-    min_subs = st.number_input("Min Subscribers", min_value=0, value=100)
+    # CHANGED: Default min_subs from 100 to 1000
+    min_subs = st.number_input("Min Subscribers", min_value=0, value=1000)
     max_subs = st.number_input("Max Subscribers", min_value=0, value=500000)
 
 with st.sidebar.expander("🎬 Channel Video Count", expanded=True):
     st.markdown("**Filter by total videos on channel:**")
-    min_channel_videos = st.number_input("Min Videos on Channel", min_value=0, max_value=500, value=0, step=10)
+    # CHANGED: Default min_channel_videos from 0 to 5
+    min_channel_videos = st.number_input("Min Videos on Channel", min_value=0, max_value=500, value=5, step=1)
     max_channel_videos = st.number_input("Max Videos on Channel", min_value=0, max_value=500, value=100, step=10)
     if max_channel_videos == 0:
         st.info("ℹ️ Max 0 = No limit")
@@ -905,6 +1002,14 @@ with st.sidebar.expander("🔍 Search Options", expanded=False):
     
     # Quota saving mode
     quota_save_mode = st.checkbox("🛡️ Quota Saving Mode", value=True, help="Automatically limits search scope")
+    
+    # NEW: Keyword variations option
+    st.markdown("---")
+    st.markdown("**🔑 Keyword Options:**")
+    use_keyword_variations = st.checkbox("Generate Keyword Variations", value=True, 
+                                         help="Automatically search 'reddit stories', 'redditstories', 'reddit story' etc.")
+    max_variations = st.slider("Max Variations per Keyword", 1, 5, 3, 
+                               help="More variations = better coverage but more quota")
 
 
 # ------------------------------------------------------------
@@ -921,6 +1026,16 @@ keyword_input = st.text_area("Enter Keywords (One per line, Max 3 recommended)",
 keywords_list = [kw.strip() for line in keyword_input.splitlines() for kw in line.split(",") if kw.strip()]
 keywords_count = len(keywords_list)
 
+# Show keyword variations preview
+if use_keyword_variations and keywords_list:
+    with st.expander("🔍 Preview Keyword Variations"):
+        for kw in keywords_list[:3]:  # Show first 3
+            variations = generate_keyword_variations(kw)[:max_variations]
+            st.markdown(f"**{kw}** → `{', '.join(variations)}`")
+        
+        total_expanded = len(expand_keywords_with_variations(keywords_list, max_variations))
+        st.info(f"📊 Total keywords after expansion: {total_expanded} (from {len(keywords_list)} original)")
+
 # ------------------------------------------------------------
 # QUOTA PREVIEW - NEW!
 # ------------------------------------------------------------
@@ -929,11 +1044,18 @@ st.markdown("### 📊 Quota Preview")
 
 # Calculate quota before search
 preview_keywords = list(dict.fromkeys(keywords_list))[:5]
+
+# Apply keyword variations if enabled
+if use_keyword_variations:
+    preview_keywords_expanded = expand_keywords_with_variations(preview_keywords, max_variations)
+else:
+    preview_keywords_expanded = preview_keywords
+
 preview_regions = search_regions if search_regions else TOP_10_PREMIUM_COUNTRIES[:3]
 preview_orders = search_orders if search_orders else ["viewCount"]
 
 quota_estimate = calculate_required_quota(
-    preview_keywords, 
+    preview_keywords_expanded, 
     preview_regions, 
     preview_orders, 
     use_pagination
@@ -972,10 +1094,12 @@ with st.expander("📋 Quota Breakdown"):
     ---
     
     **Current Settings:**
-    - Keywords: {len(preview_keywords)} ({', '.join(preview_keywords[:3])}...)
+    - Original Keywords: {len(preview_keywords)}
+    - Expanded Keywords: {len(preview_keywords_expanded)} ({', '.join(preview_keywords_expanded[:5])}...)
     - Regions: {len(preview_regions)} ({', '.join(preview_regions[:3])}...)
     - Orders: {len(preview_orders)} ({', '.join(preview_orders)})
     - Pagination: {'ON (2x searches)' if use_pagination else 'OFF'}
+    - Variations: {'ON' if use_keyword_variations else 'OFF'}
     """)
 
 # Show recommendations if quota is low
@@ -983,7 +1107,7 @@ if not can_afford:
     st.warning("⚠️ Quota kafi nahi hai! Neeche recommendations dekho:")
     
     smart_config = get_smart_search_config(
-        preview_keywords, 
+        preview_keywords_expanded, 
         preview_regions, 
         preview_orders, 
         available
@@ -992,7 +1116,7 @@ if not can_afford:
     if smart_config['reduced']:
         st.info(f"""
         **🛡️ Recommended Settings:**
-        - Keywords: {len(smart_config['keywords'])} ({', '.join(smart_config['keywords'])})
+        - Keywords: {len(smart_config['keywords'])} ({', '.join(smart_config['keywords'][:3])}...)
         - Regions: {len(smart_config['regions'])} ({', '.join(smart_config['regions'])})
         - Orders: {len(smart_config['orders'])} ({', '.join(smart_config['orders'])})
         - Pagination: {'ON' if smart_config['use_pagination'] else 'OFF'}
@@ -1015,6 +1139,12 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
     if len(keywords) == 0:
         st.error("⚠️ Koi valid keyword nahi mila!")
         st.stop()
+    
+    # APPLY KEYWORD VARIATIONS
+    if use_keyword_variations:
+        original_count = len(keywords)
+        keywords = expand_keywords_with_variations(keywords, max_variations)
+        st.info(f"🔑 Keywords expanded: {original_count} → {len(keywords)} (with variations)")
     
     if not search_regions:
         search_regions = TOP_10_PREMIUM_COUNTRIES[:3]
@@ -1050,6 +1180,11 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
         """)
     
     st.info(f"🔍 Searching: {len(final_keywords)} keywords × {len(final_regions)} regions × {len(final_orders)} orders")
+    
+    # Show keywords being searched
+    with st.expander("🔑 Keywords being searched"):
+        for i, kw in enumerate(final_keywords, 1):
+            st.write(f"{i}. `{kw}`")
     
     all_results = []
     channel_cache = {}
@@ -1343,7 +1478,7 @@ if st.button("🚀 HUNT FACELESS VIRAL VIDEOS", type="primary", use_container_wi
             
             with col1:
                 st.markdown(f"### {r['Title']}")
-                st.markdown(f"**📺 [{r['Channel']}]({r['ChannelLink']})** • 👥 {r['Subs']:,} • 🎬 {r['TotalVideos']} videos • 🌍 {r['Country']} • 📂 {r['Niche']}")
+                st.markdown(f"**📺 [{r['Channel']}]({r['ChannelLink']})** ��� 👥 {r['Subs']:,} • 🎬 {r['TotalVideos']} videos • 🌍 {r['Country']} • 📂 {r['Niche']}")
                 st.markdown(f"📅 Created: {r['ChCreated']} • ⏰ {r['UploadSchedule']}")
                 
                 if "LIKELY" in r['MonetizationStatus']:
