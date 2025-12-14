@@ -841,7 +841,7 @@ st.sidebar.markdown("---")
 
 with st.sidebar.expander("📅 Time Filters", expanded=True):
     days = st.slider("Videos from last X days", 1, 90, 14)
-    channel_age = st.selectbox("Channel Created After", ["2025", "2024", "2023", "2022", "Any"], index=1)
+    channel_age = st.selectbox("Channel Created After", ["2025", "2024", "2023", "2022", "Any"], index=0)
 
 with st.sidebar.expander("📊 View Filters", expanded=True):
     min_views = st.number_input("Min Views", min_value=1000, value=10000, step=1000)
@@ -849,7 +849,7 @@ with st.sidebar.expander("📊 View Filters", expanded=True):
     min_virality = st.slider("Min Virality (Views/Day)", 0, 10000, 500)
 
 with st.sidebar.expander("👥 Subscriber Filters", expanded=True):
-    min_subs = st.number_input("Min Subscribers", min_value=0, value=100)
+    min_subs = st.number_input("Min Subscribers", min_value=0, value=1000)
     max_subs = st.number_input("Max Subscribers", min_value=0, value=500000)
 
 with st.sidebar.expander("🎬 Channel Video Count", expanded=True):
