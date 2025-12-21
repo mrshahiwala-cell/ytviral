@@ -60,31 +60,74 @@ check_quota_reset()
 TOP_10_PREMIUM_COUNTRIES = ['US', 'AU', 'NO', 'CH', 'CA', 'GB', 'DE', 'LU', 'SE', 'NL']
 
 # ------------------------------------------------------------
-# EXPANDED CHANNEL DETECTION KEYWORDS (Generic - Any Niche)
+# EXPANDED CHANNEL DETECTION KEYWORDS - ALL NICHES INCLUDED
 # ------------------------------------------------------------
 FACELESS_INDICATORS = [
-    # Reddit/Stories (optional)
+    # NEWS - ADDED
+    "news", "breaking", "headlines", "daily news", "update", "latest", "report",
+    "current events", "world news", "today", "bulletin",
+    
+    # TECH - ADDED
+    "tech", "technology", "gadget", "review", "unboxing", "smartphone", "laptop",
+    "software", "app", "digital", "ai", "artificial intelligence",
+    
+    # COOKING/FOOD - ADDED
+    "cooking", "recipe", "recipes", "food", "kitchen", "chef", "meal", "cuisine",
+    "baking", "delicious", "tasty", "yummy",
+    
+    # GAMING
+    "gaming", "gameplay", "walkthrough", "gamer", "playthrough", "let's play",
+    "game", "games", "xbox", "playstation", "nintendo", "pc gaming",
+    
+    # Reddit/Stories
     "stories", "reddit", "aita", "horror", "scary", "creepy",
     "motivation", "motivational", "stoic", "wisdom", "quotes",
-    # Generic indicators that apply to ANY niche
+    
+    # Generic indicators
     "facts", "explained", "documentary", "history", "mystery",
     "top 10", "top 5", "ranking", "countdown", "best of",
-    "compilation", "gaming", "gameplay", "walkthrough", "tutorial",
-    "how to", "guide", "tips", "review", "reviews",
-    "news", "daily", "weekly", "update", "updates",
-    "ai voice", "text to speech", "tts", "voice over", "voiceover",
-    "no face", "anonymous", "faceless", "narrated",
-    # Additional generic terms
+    "compilation", "tutorial", "how to", "guide", "tips", "reviews",
+    "daily", "weekly", "ai voice", "text to speech", "tts", 
+    "voice over", "voiceover", "no face", "anonymous", "faceless", "narrated",
+    
+    # More generic
     "channel", "official", "tv", "media", "network",
-    "podcast", "show", "series", "episode"
+    "podcast", "show", "series", "episode", "vlog", "blog",
+    
+    # FINANCE - ADDED
+    "finance", "money", "stock", "crypto", "trading", "invest", "wealth",
+    "business", "economy", "market",
+    
+    # ENTERTAINMENT - ADDED
+    "entertainment", "celebrity", "movie", "movies", "film", "tv show",
+    "drama", "comedy", "funny", "humor", "laugh",
+    
+    # SPORTS - ADDED
+    "sports", "football", "soccer", "basketball", "cricket", "nfl", "nba",
+    
+    # EDUCATION - ADDED
+    "education", "learn", "learning", "study", "course", "tutorial",
+    "school", "university", "knowledge",
+    
+    # HEALTH/FITNESS - ADDED
+    "health", "fitness", "workout", "exercise", "gym", "yoga", "wellness",
+    
+    # TRAVEL - ADDED
+    "travel", "tour", "destination", "explore", "adventure", "trip",
+    
+    # MUSIC - ADDED
+    "music", "song", "songs", "beats", "remix", "cover", "lofi", "chill",
 ]
 
 FACELESS_DESCRIPTION_KEYWORDS = [
     "ai generated", "text to speech", "tts", "voice over", "narration",
     "automated", "compilation", "no face", "faceless", "anonymous",
-    # Generic terms
+    # Generic terms - MORE RELAXED
     "subscribe", "channel", "videos", "content", "upload",
-    "weekly", "daily", "new videos", "entertainment"
+    "weekly", "daily", "new videos", "entertainment",
+    "news", "update", "latest", "breaking",
+    "watch", "enjoy", "like", "share", "comment",
+    "welcome", "thanks for watching", "don't forget",
 ]
 
 PREMIUM_COUNTRIES = {
@@ -431,7 +474,7 @@ def generate_html_report(df, stats, quota_exceeded=False):
                 <span class="badge badge-niche">📂 {niche}</span>
             </div>
             <div class="details-section">
-                ⏱️ Duration: {row['DurationStr']} ({row['Type']}) • 👍 {row['Likes']:,} likes • 💬 {row['Comments']:,} comments • 📤 Uploaded: {row['Uploaded']} • 🔑 Keyword: {row['Keyword']}
+                ⏱️ Duration: {row['DurationStr']} ({row['Type']}) �� 👍 {row['Likes']:,} likes • 💬 {row['Comments']:,} comments • 📤 Uploaded: {row['Uploaded']} • 🔑 Keyword: {row['Keyword']}
             </div>
             <div class="action-links">
                 <a href="{row['Link']}" target="_blank" class="action-link">▶️ Watch Video</a>
@@ -592,49 +635,60 @@ def check_monetization_status(channel_data):
 
 
 # ============================================================
-# GENERIC CHANNEL DETECTION (Not just faceless anymore)
+# SUPER RELAXED CHANNEL DETECTION - ANY NICHE WORKS NOW
 # ============================================================
 def detect_channel_type(channel_data, strictness="Relaxed"):
     """
-    Generic channel detection - works for ANY niche
-    Returns channel score based on activity, not just faceless indicators
+    SUPER RELAXED detection - works for ANY niche
+    News, Tech, Gaming, Cooking - EVERYTHING passes now!
     """
     reasons = []
-    score = 50  # Start with neutral score - CHANGED!
+    score = 60  # START HIGH - Most channels should pass!
     
     channel_name = channel_data.get("name", "").lower()
     description = channel_data.get("description", "").lower()
     video_count = channel_data.get("video_count", 0)
     subs = channel_data.get("subs", 0)
     
-    # Active channel indicators (applies to ALL niches)
-    if video_count >= 50:
-        score += 20
-        reasons.append("Active channel")
-    elif video_count >= 20:
+    # Active channel = PASS (this is main criteria now)
+    if video_count >= 10:
+        score += 25
+        reasons.append("✅ Active channel")
+    elif video_count >= 5:
+        score += 15
+        reasons.append("✅ Has videos")
+    elif video_count >= 1:
         score += 10
-        reasons.append("Growing channel")
+        reasons.append("✅ Started")
     
+    # Has subscribers = PASS
     if subs >= 1000:
         score += 15
-        reasons.append("Established audience")
+        reasons.append("✅ 1K+ subs")
+    elif subs >= 100:
+        score += 10
+        reasons.append("✅ Growing")
     
-    # Check for any matching indicators (optional bonus)
+    # Bonus for matching keywords (but NOT required)
     name_matches = sum(1 for kw in FACELESS_INDICATORS if kw in channel_name)
     if name_matches >= 1:
-        score += min(name_matches * 5, 15)
-        reasons.append("Keyword match")
+        score += min(name_matches * 3, 10)
+        reasons.append("✅ Keyword match")
     
     desc_matches = sum(1 for kw in FACELESS_DESCRIPTION_KEYWORDS if kw in description)
     if desc_matches >= 1:
-        score += min(desc_matches * 5, 15)
-        reasons.append("Description match")
+        score += min(desc_matches * 2, 10)
     
-    # Thresholds - much more relaxed now
-    thresholds = {"Relaxed": 30, "Normal": 50, "Strict": 70}
-    threshold = thresholds.get(strictness, 30)
+    # SUPER LOW thresholds - almost everything passes!
+    thresholds = {"Relaxed": 20, "Normal": 40, "Strict": 60}
+    threshold = thresholds.get(strictness, 20)
     
-    return score >= threshold, min(score, 100), reasons
+    is_valid = score >= threshold
+    
+    if not is_valid:
+        reasons.append("❌ Below threshold")
+    
+    return is_valid, min(score, 100), reasons
 
 
 def get_video_type_label(duration):
@@ -662,38 +716,85 @@ def estimate_revenue(views, country, video_count):
 
 
 # ============================================================
-# EXPANDED NICHE DETECTION (More categories)
+# EXPANDED NICHE DETECTION - MORE CATEGORIES
 # ============================================================
 def detect_niche(title, channel_name, keyword):
-    """Detect niche - now includes many more categories"""
+    """Detect niche - includes ALL categories now"""
     text = f"{title} {channel_name} {keyword}".lower()
     
     niches = {
-        # Original niches
+        # NEWS - FIRST PRIORITY
+        "News": ["news", "breaking", "headlines", "latest", "update", "report", 
+                 "bulletin", "current events", "world news", "daily news", "live news"],
+        
+        # TECH
+        "Tech": ["tech", "technology", "gadget", "phone", "smartphone", "laptop", 
+                "computer", "review", "unboxing", "software", "app", "ai", "digital"],
+        
+        # GAMING
+        "Gaming": ["gaming", "gameplay", "walkthrough", "gamer", "playthrough", 
+                  "let's play", "game", "games", "xbox", "playstation", "nintendo"],
+        
+        # COOKING/FOOD
+        "Cooking/Food": ["cooking", "recipe", "recipes", "food", "kitchen", "chef", 
+                        "meal", "cuisine", "baking", "delicious", "tasty"],
+        
+        # FINANCE
+        "Finance": ["finance", "money", "stock", "stocks", "crypto", "bitcoin",
+                   "trading", "invest", "investing", "wealth", "economy", "market"],
+        
+        # Reddit/Stories
         "Reddit Stories": ["reddit", "aita", "am i the", "tifu", "entitled", "revenge"],
+        
+        # Horror/Scary
         "Horror/Scary": ["horror", "scary", "creepy", "nightmare", "paranormal", "ghost"],
-        "True Crime": ["true crime", "crime", "murder", "case", "investigation", "serial killer"],
+        
+        # True Crime
+        "True Crime": ["true crime", "crime", "murder", "case", "investigation"],
+        
+        # Motivation
         "Motivation": ["motivation", "stoic", "stoicism", "mindset", "discipline", "success"],
+        
+        # Facts/Education
         "Facts/Education": ["facts", "explained", "documentary", "history", "science", "learn"],
-        "Gaming": ["gaming", "gameplay", "walkthrough", "gamer", "playthrough", "let's play"],
+        
+        # Entertainment
+        "Entertainment": ["entertainment", "celebrity", "movie", "movies", "film", "tv show"],
+        
+        # Compilation
         "Compilation": ["compilation", "best of", "funny", "fails", "moments"],
+        
+        # Mystery
         "Mystery": ["mystery", "mysteries", "unsolved", "conspiracy", "secret"],
         
-        # NEW NICHES ADDED
-        "News": ["news", "breaking", "latest", "update", "report", "headlines"],
-        "Tech": ["tech", "technology", "gadget", "phone", "laptop", "review", "unboxing"],
-        "Cooking/Food": ["cooking", "recipe", "food", "kitchen", "chef", "meal", "cuisine"],
+        # Travel
         "Travel": ["travel", "vlog", "tour", "destination", "visit", "trip", "explore"],
-        "Finance": ["finance", "money", "invest", "stock", "crypto", "trading", "wealth"],
+        
+        # Health/Fitness
         "Health/Fitness": ["fitness", "health", "workout", "exercise", "gym", "weight loss"],
+        
+        # Beauty/Fashion
         "Beauty/Fashion": ["beauty", "makeup", "fashion", "style", "skincare", "tutorial"],
-        "Music": ["music", "song", "cover", "remix", "beat", "melody", "singer"],
+        
+        # Music
+        "Music": ["music", "song", "cover", "remix", "beat", "melody", "singer", "lofi"],
+        
+        # Sports
         "Sports": ["sports", "football", "basketball", "soccer", "cricket", "match"],
-        "Entertainment": ["entertainment", "celebrity", "movie", "tv show", "drama"],
+        
+        # DIY/Crafts
         "DIY/Crafts": ["diy", "craft", "handmade", "tutorial", "how to make"],
+        
+        # Pets/Animals
         "Pets/Animals": ["pet", "dog", "cat", "animal", "puppy", "kitten"],
+        
+        # Cars/Auto
         "Cars/Auto": ["car", "auto", "vehicle", "driving", "motor", "bike"],
+        
+        # Kids/Family
         "Kids/Family": ["kids", "children", "family", "parenting", "baby"],
+        
+        # Comedy
         "Comedy": ["comedy", "funny", "laugh", "humor", "joke", "prank"],
     }
     
@@ -774,7 +875,7 @@ def search_videos_with_pagination(keyword, params, api_key, max_pages=2):
 
 
 # ------------------------------------------------------------
-# SIDEBAR SETTINGS
+# SIDEBAR SETTINGS - WITH FIXED DEFAULTS
 # ------------------------------------------------------------
 st.sidebar.header("⚙️ Settings")
 
@@ -821,15 +922,18 @@ st.sidebar.markdown("---")
 
 with st.sidebar.expander("📅 Time Filters", expanded=True):
     days = st.slider("Videos from last X days", 1, 90, 14)
-    channel_age = st.selectbox("Channel Created After", ["2025", "2024", "2023", "2022", "Any"], index=1)
+    # ✅ FIX: Default to 2025 (index=0)
+    channel_age = st.selectbox("Channel Created After", ["2025", "2024", "2023", "2022", "Any"], index=0)
 
 with st.sidebar.expander("📊 View Filters", expanded=True):
-    min_views = st.number_input("Min Views", min_value=1000, value=10000, step=1000)
+    # ✅ FIX: Lower min views for news (news videos can have lower views initially)
+    min_views = st.number_input("Min Views", min_value=1000, value=5000, step=1000)
     max_views = st.number_input("Max Views (0=No Limit)", min_value=0, value=0, step=10000)
-    min_virality = st.slider("Min Virality (Views/Day)", 0, 10000, 500)
+    min_virality = st.slider("Min Virality (Views/Day)", 0, 10000, 300)
 
 with st.sidebar.expander("👥 Subscriber Filters", expanded=True):
-    min_subs = st.number_input("Min Subscribers", min_value=0, value=100)
+    # ✅ FIX: Min subs = 1000 by default
+    min_subs = st.number_input("Min Subscribers", min_value=0, value=1000)
     max_subs = st.number_input("Max Subscribers", min_value=0, value=500000)
 
 with st.sidebar.expander("🎬 Channel Video Count", expanded=True):
@@ -843,24 +947,28 @@ with st.sidebar.expander("🎬 Video Type", expanded=True):
     video_type = st.selectbox("Video Duration", ["All", "Long (5min+)", "Medium (1-5min)", "Shorts (<1min)"])
 
 # ============================================================
-# CHANGED: Channel Filter - Default OFF now!
+# ✅ FIX: Faceless ON by default BUT super relaxed detection
 # ============================================================
 with st.sidebar.expander("🎯 Channel Detection", expanded=True):
-    # CHANGED FROM True TO False - Now shows ALL channels by default
-    faceless_only = st.checkbox("Only Faceless/Automated Channels", value=False)
+    # ✅ FIX: Default TRUE but detection is super relaxed now
+    faceless_only = st.checkbox("Smart Channel Filter (Recommended)", value=True, 
+                                help="ON = Uses smart detection. OFF = Shows ALL channels")
     if faceless_only:
-        faceless_strictness = st.select_slider("Detection Strictness", options=["Relaxed", "Normal", "Strict"], value="Relaxed")
+        faceless_strictness = st.select_slider("Detection Strictness", 
+                                               options=["Relaxed", "Normal", "Strict"], 
+                                               value="Relaxed")
     else:
         faceless_strictness = "Relaxed"
     
-    st.info("💡 Uncheck to see ALL channels regardless of type")
+    st.success("💡 Relaxed mode: News, Tech, Gaming, ALL niches work!")
 
 with st.sidebar.expander("💰 Monetization", expanded=False):
     monetized_only = st.checkbox("Only Likely Monetized", value=False)
     min_upload_frequency = st.slider("Min Uploads/Week", 0, 14, 0)
 
 with st.sidebar.expander("🌍 Region Selection", expanded=False):
-    premium_only = st.checkbox("Only Premium CPM Countries", value=False)
+    # ✅ FIX: Premium only = TRUE by default
+    premium_only = st.checkbox("Only Premium CPM Countries", value=True)
     
     st.markdown("**Select Regions to Search:**")
     
@@ -872,14 +980,15 @@ with st.sidebar.expander("🌍 Region Selection", expanded=False):
         if st.button("Top 5 Only", use_container_width=True):
             st.session_state['selected_regions'] = TOP_10_PREMIUM_COUNTRIES[:5]
     
+    # ✅ FIX: Default to Top 5 premium countries
     if 'selected_regions' not in st.session_state:
-        st.session_state['selected_regions'] = TOP_10_PREMIUM_COUNTRIES[:3]
+        st.session_state['selected_regions'] = TOP_10_PREMIUM_COUNTRIES[:5]
     
     search_regions = st.multiselect(
         "Regions",
         TOP_10_PREMIUM_COUNTRIES,
         default=st.session_state['selected_regions'],
-        help="Fewer regions = Less quota usage"
+        help="Premium CPM countries selected by default"
     )
 
 with st.sidebar.expander("🔍 Search Options", expanded=False):
@@ -890,55 +999,62 @@ with st.sidebar.expander("🔍 Search Options", expanded=False):
         help="Fewer orders = Less quota usage"
     )
     use_pagination = st.checkbox("Use Pagination (2x quota)", value=False)
+    # ✅ FIX: Quota save mode ON by default
     quota_save_mode = st.checkbox("🛡️ Quota Saving Mode", value=True, help="Automatically limits search scope")
 
 
 # ------------------------------------------------------------
-# KEYWORDS INPUT - NOW GENERIC EXAMPLES
+# KEYWORDS INPUT - GENERIC EXAMPLES FOR ANY NICHE
 # ------------------------------------------------------------
 st.markdown("### 🔑 Keywords")
 
-# CHANGED: Generic default keywords instead of Reddit-specific
-default_keywords = """tech reviews
-cooking recipes
-news today"""
+# ✅ FIX: Generic default keywords - includes news!
+default_keywords = """news today
+tech review
+motivation"""
 
 keyword_input = st.text_area(
     "Enter Keywords (One per line - ANY topic works!)", 
     height=100, 
     value=default_keywords,
-    help="Ab koi bhi keyword daal sakte ho - gaming, news, cooking, tech, anything!"
+    help="News, Tech, Gaming, Cooking - ANYTHING works now!"
 )
 
 keywords_list = [kw.strip() for line in keyword_input.splitlines() for kw in line.split(",") if kw.strip()]
 keywords_count = len(keywords_list)
 
-# Example keywords section
-with st.expander("💡 Example Keywords (Click to see)"):
+# Example keywords section - EXPANDED
+with st.expander("💡 Example Keywords for ANY Niche"):
     st.markdown("""
-    **News:**
-    - `breaking news`, `world news`, `daily news update`
+    **📰 News:**
+    - `news today`, `breaking news`, `world news`, `daily news`, `headlines`
     
-    **Tech:**
-    - `tech reviews`, `smartphone review`, `laptop unboxing`
+    **📱 Tech:**
+    - `tech review`, `smartphone review`, `gadget unboxing`, `laptop review`
     
-    **Gaming:**
-    - `gaming`, `gameplay`, `game walkthrough`
+    **🎮 Gaming:**
+    - `gaming`, `gameplay walkthrough`, `game review`, `lets play`
     
-    **Cooking:**
-    - `cooking recipes`, `easy recipes`, `food tutorial`
+    **🍳 Cooking:**
+    - `easy recipes`, `cooking tutorial`, `food recipes`, `kitchen tips`
     
-    **Finance:**
-    - `stock market`, `crypto news`, `investing tips`
+    **💰 Finance:**
+    - `stock market`, `crypto news`, `investing tips`, `money tips`
     
-    **Entertainment:**
+    **🎬 Entertainment:**
     - `movie review`, `celebrity news`, `tv show recap`
     
-    **Education:**
-    - `how to`, `tutorial`, `learn programming`
+    **📚 Education:**
+    - `explained`, `facts`, `how to`, `tutorial`, `learn`
     
-    **Motivation:**
-    - `motivation`, `self improvement`, `success mindset`
+    **💪 Motivation:**
+    - `motivation`, `success mindset`, `self improvement`, `stoic wisdom`
+    
+    **😱 Horror/Stories:**
+    - `scary stories`, `horror`, `creepy`, `reddit stories`
+    
+    **✈️ Travel:**
+    - `travel vlog`, `destination guide`, `travel tips`
     """)
 
 # ------------------------------------------------------------
@@ -948,7 +1064,7 @@ st.markdown("---")
 st.markdown("### 📊 Quota Preview")
 
 preview_keywords = list(dict.fromkeys(keywords_list))[:5]
-preview_regions = search_regions if search_regions else TOP_10_PREMIUM_COUNTRIES[:3]
+preview_regions = search_regions if search_regions else TOP_10_PREMIUM_COUNTRIES[:5]
 preview_orders = search_orders if search_orders else ["viewCount"]
 
 quota_estimate = calculate_required_quota(
@@ -1034,7 +1150,7 @@ if st.button("🚀 SEARCH CHANNELS", type="primary", use_container_width=True):
         st.stop()
     
     if not search_regions:
-        search_regions = TOP_10_PREMIUM_COUNTRIES[:3]
+        search_regions = TOP_10_PREMIUM_COUNTRIES[:5]
     
     if not search_orders:
         search_orders = ["viewCount"]
@@ -1212,14 +1328,13 @@ if st.button("🚀 SEARCH CHANNELS", type="primary", use_container_width=True):
                         if created_year < int(channel_age):
                             continue
                     
-                    # CHANGED: Use generic detection, only filter if checkbox is ON
+                    # ✅ FIX: Super relaxed detection - almost everything passes!
                     if faceless_only:
                         is_valid, confidence, reasons = detect_channel_type(ch, faceless_strictness)
                         if not is_valid:
                             continue
                     else:
-                        # If faceless filter is OFF, accept ALL channels
-                        is_valid, confidence, reasons = True, 50, ["All channels included"]
+                        is_valid, confidence, reasons = True, 100, ["All channels included"]
                     
                     country = ch.get("country", "N/A")
                     if premium_only and country not in PREMIUM_COUNTRIES:
@@ -1319,7 +1434,15 @@ if st.button("🚀 SEARCH CHANNELS", type="primary", use_container_width=True):
     col4.metric("Duplicates Skipped", stats["duplicates_skipped"])
     
     if not all_results:
-        st.warning("😔 Koi result nahi mila! Filters adjust karo ya baad mein try karo.")
+        st.warning("😔 Koi result nahi mila! Try these fixes:")
+        st.markdown("""
+        1. **Lower Min Views** to 1000
+        2. **Lower Min Virality** to 100
+        3. **Increase Days** to 30
+        4. **Lower Min Subs** to 500
+        5. **Try different keywords**
+        6. **Uncheck "Smart Channel Filter"**
+        """)
         st.stop()
     
     df = pd.DataFrame(all_results)
@@ -1411,4 +1534,4 @@ if st.button("🚀 SEARCH CHANNELS", type="primary", use_container_width=True):
 
 # Footer
 st.markdown("---")
-st.caption("Made with ❤️ | YouTube Channel Hunter PRO 2025")
+st.caption("Made with ❤️ | YouTube Channel Hunter PRO 2025 - ALL NICHES SUPPORTED!")
